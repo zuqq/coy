@@ -98,7 +98,7 @@ reifyName =
 
 reifyType :: Type 'Checked -> LLVM.AST.Type
 reifyType = \case
-    Unit -> LLVM.AST.StructureType False mempty
+    Unit -> LLVM.AST.NamedTypeReference (reifyName "unit")
     Bool -> LLVM.AST.Type.i1
     I64 -> LLVM.AST.Type.i64
     F64 -> LLVM.AST.Type.double
@@ -134,6 +134,9 @@ alignedTo x a = (x + a - 1) `div` a * a
 
 codegen :: Module 'Checked -> ModuleBuilder ()
 codegen (Module typeDefs fnDefs) = mdo
+    -- Define the unit type.
+    defineType "unit" (LLVM.AST.StructureType False mempty)
+
     for_ typeDefs (\case
         StructDef n0 ts -> do
             let n = structName n0
@@ -313,9 +316,7 @@ exprWithoutBlock :: ExprWithoutBlock 'Checked -> IRBuilder LLVM.AST.Operand
 exprWithoutBlock = \case
     LitExpr l -> pure (
         case l of
-            UnitLit () ->
-                LLVM.AST.ConstantOperand
-                    (LLVM.AST.Constant.Struct Nothing False mempty)
+            UnitLit () -> unitLit
             BoolLit b -> LLVM.IRBuilder.bit (if b then 1 else 0)
             I64Lit x -> LLVM.IRBuilder.int64 x
             F64Lit x -> LLVM.IRBuilder.double x)
@@ -384,6 +385,10 @@ exprWithoutBlock = \case
         let a0 = LLVM.AST.ConstantOperand symbol
         as <- traverse exprWithoutBlock es
         LLVM.IRBuilder.call fn [(a, mempty) | a <- a0 : as]
+  where
+    unitLit =
+        LLVM.AST.ConstantOperand
+            (LLVM.AST.Constant.Struct (Just (reifyName "unit")) False mempty)
 
 call :: Call 'Checked -> IRBuilder LLVM.AST.Operand
 call (Call n es) = do
