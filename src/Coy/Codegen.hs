@@ -384,7 +384,8 @@ exprWithoutBlock = \case
         symbol <- LLVM.IRBuilder.globalStringPtr (Text.unpack f) symbolName
         let a0 = LLVM.AST.ConstantOperand symbol
         as <- traverse exprWithoutBlock es
-        LLVM.IRBuilder.call fn [(a, mempty) | a <- a0 : as]
+        void (LLVM.IRBuilder.call fn [(a, mempty) | a <- a0 : as])
+        pure unitLit
   where
     unitLit =
         LLVM.AST.ConstantOperand
