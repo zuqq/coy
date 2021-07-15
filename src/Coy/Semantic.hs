@@ -250,9 +250,6 @@ findValue n = do
     vs <- use values
     Map.lookup n vs `orFail` ValueNotFound n
 
-bindFn :: Text -> Vector (Type 'Checked) -> Type 'Checked -> Semantic ()
-bindFn n as t = fns %= Map.insert n (as, t)
-
 bindValue :: Text -> Type 'Checked -> Semantic ()
 bindValue x t = values %= Map.insert x t
 
