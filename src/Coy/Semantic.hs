@@ -69,68 +69,136 @@ data SemanticErrorMessage
     | FnNotFound Text
     | ValueNotFound Text
     | FnDefTypeMismatch
+    -- ^ The declared and observed return type of a function differ.
+        Text
+        -- ^ Name of the function.
         (Type 'Checked)
-        -- ^ Expected return type.
+        -- ^ Declared return type.
         (Type 'Checked)
-        -- ^ Actual return type.
-    | IfScrutineeTypeMismatch Text (Type 'Checked)
+        -- ^ Observed return type.
+    | IfScrutineeTypeMismatch
+    -- ^ The scrutinee in an if expression is not of type @Bool@.
+        Text
+        -- ^ Name of the scrutinee.
+        (Type 'Checked)
+        -- ^ Actual type of the scrutinee.
     | IfBlocksTypeMismatch
+    -- ^ The result types in an if expression are not the same.
         (Block 'Unchecked)
+        -- ^ The @then@ block.
         (Type 'Checked)
+        -- ^ Result type of the @then@ block.
         (Block 'Unchecked)
+        -- ^ The @else@ block.
         (Type 'Checked)
-    | MatchExprTypeMismatch Text (Type 'Checked)
+        -- ^ Result type of the @else@ block.
+    | MatchScrutineeTypeMismatch
+    -- ^ The scrutinee in a match expression is not of enum type.
+        Text
+        -- ^ Name of the scrutinee.
+        (Type 'Checked)
+        -- ^ Type of the scrutinee.
     | MatchArmEnumMismatch
+    -- ^ The enum names in a match expression are not consistent with the type
+    -- of the scrutinee.
         Text
-        -- ^ Expected enum name.
+        -- ^ Name of the scrutinee's type.
         [Text]
-        -- ^ Actual enum names.
+        -- ^ Enum names in the match arms.
     | MatchArmEnumVariantMismatch
+    -- ^ The enum variant names in a match expression are not consistent with
+    -- the type of the scrutinee.
         Text
-        -- ^ Name of the enum.
+        -- ^ Name of the scrutinee's type.
         [Text]
-        -- ^ Actual enum variant names.
-    | MatchArmTypeMismatch
+        -- ^ Enum variant names in the match arms.
+    | MatchArmArityMismatch
+    -- ^ The number of variables in a match arm is not equal to the arity of
+    -- the corresponding constructor.
         Text
         -- ^ Name of the enum.
         Text
-        -- ^ Names of the enum variant.
+        -- ^ Name of the enum variant.
         (Vector Text)
-        -- ^ Name for the components.
+        -- ^ Variables for the components.
     | MatchBlocksTypeMismatch
+    -- ^ The result types in a match expression are not all the same.
         [MatchArm 'Unchecked]
+        -- ^ The match arms.
         [Type 'Checked]
+        -- ^ Result types of the match arms.
+    | StructPatternArityMismatch
+    -- ^ The number of variables in a struct pattern is not equal to the arity
+    -- of the struct's constructor.
+        Text
+        -- ^ Name of the struct.
+        (Vector Text)
+        -- ^ Variables for the components.
     | StructPatternTypeMismatch
-        (Pattern 'Unchecked)
+    -- ^ The right-hand side of a destructuring is of the wrong type.
+        Text
+        -- ^ Name of the struct.
         (Expr 'Unchecked)
+        -- ^ Right-hand side of the destructuring.
         (Type 'Checked)
+        -- ^ Type of the right-hand side.
     | UnaryOpTypeMismatch
+    -- ^ The given unary operator has no overloading consistent with the
+    -- arguments' types.
         (UnaryOp 'Unchecked)
+        -- ^ The unary operator.
         (ExprWithoutBlock 'Unchecked)
+        -- ^ Argument.
         (Type 'Checked)
+        -- ^ Type of the argument.
     | BinaryOpTypeMismatch
+    -- ^ The given binary operator has no overloading consistent with the
+    -- arguments' types.
         (BinaryOp 'Unchecked)
+        -- ^ The binary operator.
         (ExprWithoutBlock 'Unchecked)
+        -- ^ First argument.
         (Type 'Checked)
+        -- ^ Type of the first argument.
         (ExprWithoutBlock 'Unchecked)
+        -- ^ Second argument.
         (Type 'Checked)
+        -- ^ Type of the second argument.
     | CallExprTypeMismatch
+    -- ^ The given argument list doesn't conform to the function's signature.
         Text
+        -- ^ Name of the function.
         (Vector (ExprWithoutBlock 'Unchecked))
+        -- ^ Arguments.
         (Vector (Type 'Checked))
+        -- ^ Types of the arguments.
     | StructExprTypeMismatch
+    -- ^ The given argument list doesn't conform to the constructor's signature.
         Text
+        -- ^ Names of the struct.
         (Vector (ExprWithoutBlock 'Unchecked))
+        -- ^ Arguments.
         (Vector (Type 'Checked))
+        -- ^ Types of the arguments.
     | EnumExprTypeMismatch
+    -- ^ The given argument list doesn't conform to the constructor's signature.
         Text
+        -- ^ Name of the enum.
         (EnumVariantAccessor 'Unchecked)
+        -- ^ Name of the enum variant.
         (Vector (ExprWithoutBlock 'Unchecked))
+        -- ^ Arguments.
         (Vector (Type 'Checked))
-    | FormatStringTypeMismatch
+        -- ^ Types of the arguments.
+    | PrintLnExprTypeMismatch
+    -- ^ The argument list contains non-printable expressions or doesn't match
+    -- the shape of the format string.
         (FormatString 'Unchecked)
+        -- ^ The format string.
         [ExprWithoutBlock 'Unchecked]
+        -- ^ Arguments.
         [Type 'Checked]
+        -- ^ Types of the arguments.
     deriving Show
 
 data SemanticError = SemanticError Context SemanticErrorMessage
@@ -299,14 +367,14 @@ semantic0 (tds, fds) = do
         Right typeOrder -> pure (fmap labelWithCheckedTypeDef typeOrder, fds')
 
 fnDef :: FnDecl 'Checked -> Block 'Unchecked -> Semantic (FnDef 'Checked)
-fnDef d@(FnDecl _ as returnType) b = do
+fnDef d@(FnDecl n as returnType) b = do
     (b', resultType) <- namespaced (do
         traverse_ bindFnArg as
         block b)
-    if resultType == returnType then
+    if returnType == resultType then
         pure (FnDef d b')
     else
-        throwSemanticError (FnDefTypeMismatch returnType resultType)
+        throwSemanticError (FnDefTypeMismatch n returnType resultType)
   where
     bindFnArg (FnArg an at) = bindValue an at
 
@@ -322,14 +390,17 @@ statement = \case
         (e', t) <- expr e
         bindValue x t
         pure (LetStatement (VarPattern x) e')
-    LetStatement p@(StructPattern n xs) e -> do
-        (e', t) <- expr e
+    LetStatement (StructPattern n xs) e -> do
         fieldTypes <- findStruct n
-        if Struct n == t && Vector.length xs == Vector.length fieldTypes then do
-            Vector.zipWithM_ bindValue xs fieldTypes
-            pure (LetStatement (StructPattern n xs) e')
-        else
-            throwSemanticError (StructPatternTypeMismatch p e t)
+        when
+            (Vector.length xs /= Vector.length fieldTypes)
+            (throwSemanticError (StructPatternArityMismatch n xs))
+        (e', t) <- expr e
+        when
+            (Struct n /= t)
+            (throwSemanticError (StructPatternTypeMismatch n e t))
+        Vector.zipWithM_ bindValue xs fieldTypes
+        pure (LetStatement (StructPattern n xs) e')
     ExprStatement e -> do
         (e', _) <- expr e
         pure (ExprStatement e')
@@ -379,7 +450,7 @@ exprWithBlock = \case
                             (e', resultType) <- expr e
                             pure (i, CheckedMatchArm xs e', resultType))
                     else
-                        throwSemanticError (MatchArmTypeMismatch n v xs))
+                        throwSemanticError (MatchArmArityMismatch n v xs))
 
                 -- Check that the types of the match arms are all the same.
                 let resultTypes = [resultType | (_, _, resultType) <- iats']
@@ -393,7 +464,7 @@ exprWithBlock = \case
                     _ ->
                         throwSemanticError
                             (MatchBlocksTypeMismatch as resultTypes)
-            _ -> throwSemanticError (MatchExprTypeMismatch x t)
+            _ -> throwSemanticError (MatchScrutineeTypeMismatch x t)
 
 exprWithoutBlock
     :: ExprWithoutBlock 'Unchecked
@@ -471,7 +542,7 @@ exprWithoutBlock = \case
 
         -- Work around the monomorphism restriction with an explicit type.
         let abort :: Semantic a
-            abort = throwSemanticError (FormatStringTypeMismatch f es ts)
+            abort = throwSemanticError (PrintLnExprTypeMismatch f es ts)
 
         let formatSpecifier = \case
                 I64 -> pure "%lld"
