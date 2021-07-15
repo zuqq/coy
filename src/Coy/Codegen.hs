@@ -5,7 +5,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo #-}
 
-module Coy.Codegen where
+module Coy.Codegen (buildModule, codegen) where
 
 import Control.Monad (void, zipWithM_)
 import Control.Monad.State.Class (MonadState)
