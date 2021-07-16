@@ -266,12 +266,7 @@ semantic (Module typeDefs fnDefs) = do
 
     let ss = Map.fromList [(n, ts) | StructDef n ts <- typeDefs']
 
-    let enumVariants vs =
-            Map.fromList [(v, (i, ts)) | (i, EnumVariant v ts) <- indexed vs]
-
     let es = Map.fromList [(n, enumVariants vs) | EnumDef n vs <- typeDefs']
-
-    let typeOf (FnArg _ at) = at
 
     let fs = Map.fromList [(n, (fmap typeOf as, t)) | FnDecl n as t <- fnDecls']
 
@@ -283,6 +278,11 @@ semantic (Module typeDefs fnDefs) = do
         evalStateT (zipWithM fnDef fnDecls' [b | FnDef _ b <- fnDefs]) context)
 
     pure (Module typeDefs' fnDefs')
+  where
+    enumVariants vs =
+        Map.fromList [(v, (i, ts)) | (i, EnumVariant v ts) <- indexed vs]
+
+    typeOf (FnArg _ at) = at
 
 semantic0
     :: ([TypeDef 'Unchecked], [FnDecl 'Unchecked])
