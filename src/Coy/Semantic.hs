@@ -129,7 +129,7 @@ data SemanticErrorMessage
         -- ^ Name of the enum variant.
         (Vector Text)
         -- ^ Variables for the components.
-    | MatchBlocksTypeMismatch
+    | MatchArmTypeMismatch
     -- ^ The result types in a match expression are not all the same.
         [MatchArm 'Unchecked]
         -- ^ The match arms.
@@ -468,7 +468,7 @@ exprWithBlock = \case
                         pure (CheckedMatchExpr x n as', resultType)
                     _ ->
                         throwSemanticError
-                            (MatchBlocksTypeMismatch as resultTypes)
+                            (MatchArmTypeMismatch as resultTypes)
             _ -> throwSemanticError (MatchScrutineeTypeMismatch x t)
 
 exprWithoutBlock
