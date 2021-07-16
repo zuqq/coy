@@ -543,15 +543,17 @@ exprWithoutBlock = \case
                 F64 -> pure "%f"
                 _ -> abort
 
-        -- Note that, because of the way that the format string is parsed,
-        -- there is at most one leading chunk that is not equal to @"{}"@.
+        -- Fold over the list of argument types in order to fill in the holes in
+        -- the format string. Because holes and non-holes alternate, there is at
+        -- most one leading chunk that is not a hole.
         let step (s, "{}" : cs') t = do
                 s' <- formatSpecifier t
                 pure (s <> s', cs')
             step (s, c : "{}" : cs') t = do
                 s' <- formatSpecifier t
                 pure (s <> c <> s', cs')
-            -- This covers the case where there are not enough parameters.
+            -- This covers the case where there are not enough holes for the
+            -- given argument list.
             step _ _ = abort
 
         (result, leftovers) <- foldM step (mempty, cs) ts
@@ -560,7 +562,7 @@ exprWithoutBlock = \case
         if "{}" `elem` leftovers then
             abort
         else do
-            -- At this point there should be zero or one chunks left; @mconcat@
+            -- At this point there should be at most one chunk left; @mconcat@
             -- conveniently handles both cases. We also make sure to add the
             -- trailing line feed character here.
             let f' = CheckedFormatString (result <> mconcat leftovers <> "\n")
