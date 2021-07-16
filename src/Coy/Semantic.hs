@@ -93,13 +93,13 @@ data SemanticErrorMessage
     | IfBlocksTypeMismatch
     -- ^ The result types in an if expression are not the same.
         (Block 'Unchecked)
-        -- ^ The @then@ block.
+        -- ^ The first block.
         (Type 'Checked)
-        -- ^ Result type of the @then@ block.
+        -- ^ Result type of the first block.
         (Block 'Unchecked)
-        -- ^ The @else@ block.
+        -- ^ The second block.
         (Type 'Checked)
-        -- ^ Result type of the @else@ block.
+        -- ^ Result type of the second block.
     | MatchScrutineeTypeMismatch
     -- ^ The scrutinee in a match expression is not of enum type.
         Text
