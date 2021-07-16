@@ -11,7 +11,6 @@ import Control.Monad (void, zipWithM_)
 import Control.Monad.State.Class (MonadState)
 -- We need to use lazy @State@ for @-XRecursiveDo@.
 import Control.Monad.Trans.State (State, evalState)
-import Data.ByteString.Short (ShortByteString)
 import Data.Foldable (foldl', for_, toList, traverse_)
 import Data.List.Index (ifor, ifor_)
 import Data.Map (Map)
@@ -20,6 +19,7 @@ import Data.Vector (Vector)
 import Lens.Micro (Lens', lens)
 import Lens.Micro.Mtl ((%=), (.=), (<<%=), use)
 
+import qualified Data.ByteString.Char8 as ByteString.Char8
 import qualified Data.ByteString.Short as ByteString.Short
 import qualified Data.Map as Map
 import qualified Data.Text as Text
@@ -53,9 +53,11 @@ type ModuleBuilder = LLVM.IRBuilder.ModuleBuilderT (State Context)
 
 type IRBuilder = LLVM.IRBuilder.IRBuilderT ModuleBuilder
 
-buildModule :: ShortByteString -> ModuleBuilder a -> LLVM.AST.Module
+buildModule :: String -> ModuleBuilder a -> LLVM.AST.Module
 buildModule n builder =
-    evalState (LLVM.IRBuilder.buildModuleT n builder) (Context mempty mempty 0)
+    evalState (LLVM.IRBuilder.buildModuleT n' builder) (Context mempty mempty 0)
+  where
+    n' = ByteString.Short.toShort (ByteString.Char8.pack n)
 
 -- These helper functions are polymorphic in the monad @m@ so that I can use
 -- them with both @ModuleBuilder@ and @IRBuilder@.
