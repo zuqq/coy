@@ -68,7 +68,6 @@ instance Monoid Context where
 data SemanticErrorMessage
     = RedefinedTypes [TypeDef 'Unchecked]
     | RedefinedFns [FnDecl 'Unchecked]
-    | RedefinedBuiltinTypes [TypeDef 'Unchecked]
     | StructOrEnumNotFound Text
     | TypeCycle (NonEmpty (TypeDef 'Unchecked))
     | StructNotFound Text
@@ -296,17 +295,7 @@ semantic0 (tds, fds) = do
 
     let fnNames = Set.fromList [n | FnDecl n _ _ <- fds]
 
-    -- Check that no built-in types were redefined.
-    let builtinTypeNames = Set.fromList ["()", "Bool", "I64", "F64"]
-
-    let redefinedBuiltinTypeNames =
-            typeNames `Set.intersection` builtinTypeNames
-
-    when
-        (not (Set.null redefinedBuiltinTypeNames))
-        (throwEmptySemanticError (RedefinedBuiltinTypes tds))
-
-    -- Check that no other type was redefined.
+    -- Check that no type was redefined.
     when
         (Set.size typeNames /= length tds)
         (throwEmptySemanticError (RedefinedTypes tds))
