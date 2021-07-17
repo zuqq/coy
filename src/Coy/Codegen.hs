@@ -98,6 +98,9 @@ reifyName =
     . ByteString.Short.toShort
     . Text.Encoding.encodeUtf8
 
+index :: Integer -> LLVM.AST.Operand
+index = LLVM.IRBuilder.int32
+
 reifyType :: Type 'Checked -> LLVM.AST.Type
 reifyType = \case
     Unit -> LLVM.AST.NamedTypeReference (reifyName "unit")
@@ -227,15 +230,6 @@ fnDef (FnDef (FnDecl n as t) b) =
             -- the appropriate function.
             tailBlock b)
 
-cast :: Text -> Int -> LLVM.AST.Operand -> IRBuilder LLVM.AST.Operand
-cast n i a = do
-    t <- findType (enumName n Nothing)
-    p <- LLVM.IRBuilder.alloca t Nothing 0
-    LLVM.IRBuilder.store p 0 a
-    t' <- findType (enumName n (Just i))
-    p' <- LLVM.IRBuilder.bitcast p (LLVM.AST.Type.ptr t')
-    LLVM.IRBuilder.load p' 0
-
 construct
     :: LLVM.AST.Type
     -> Vector (ExprWithoutBlock 'Checked)
@@ -247,8 +241,6 @@ construct t es = do
         a <- exprWithoutBlock e
         LLVM.IRBuilder.store q 0 a)
     LLVM.IRBuilder.load p 0
-  where
-    index = LLVM.IRBuilder.int32
 
 destructureStruct :: Vector Text -> LLVM.AST.Operand -> IRBuilder ()
 destructureStruct xs a =
@@ -256,11 +248,22 @@ destructureStruct xs a =
         b <- LLVM.IRBuilder.extractValue a [fromIntegral i]
         bindValue x b)
 
-destructureEnum :: Vector Text -> LLVM.AST.Operand -> IRBuilder ()
-destructureEnum xs a =
-    Vector.iforM_ xs (\i x -> do
-        -- Add 1 in order to skip the tag.
-        b <- LLVM.IRBuilder.extractValue a [fromIntegral i + 1]
+destructureEnumVariant
+    :: Text
+    -- ^ Name of the enum.
+    -> Int
+    -- ^ Index of the enum variant.
+    -> Vector Text
+    -- ^ Variables for the components.
+    -> LLVM.AST.Operand
+    -- ^ Pointer to the value.
+    -> IRBuilder ()
+destructureEnumVariant n i xs p0 = do
+    t <- findType (enumName n (Just i))
+    p <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr t)
+    Vector.iforM_ xs (\k x -> do
+        q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral k + 1)]
+        b <- LLVM.IRBuilder.load q 0
         bindValue x b)
 
 block :: Block 'Checked -> IRBuilder LLVM.AST.Operand
@@ -298,14 +301,16 @@ exprWithBlock = \case
         LLVM.IRBuilder.phi [(thenValue, thenLabel), (elseValue, elseLabel)]
     CheckedMatchExpr x n as -> mdo
         a <- findValue x
+        t0 <- findType (enumName n Nothing)
+        p0 <- LLVM.IRBuilder.alloca t0 Nothing 0
+        LLVM.IRBuilder.store p0 0 a
         tagValue <- LLVM.IRBuilder.extractValue a [0]
         let outgoing = [(tagLit i, vl) | (i, _, vl) <- incoming]
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
         incoming <- ifor as (\i (CheckedMatchArm xs e) -> do
             vl <- LLVM.IRBuilder.block
             result <- namespaced (do
-                a' <- cast n i a
-                destructureEnum xs a'
+                destructureEnumVariant n i xs p0
                 expr e)
             LLVM.IRBuilder.br joinLabel
             pure (i, result, vl))
@@ -432,13 +437,15 @@ tailExprWithBlock = \case
         namespaced (tailBlock elseBlock)
     CheckedMatchExpr x n as -> mdo
         a <- findValue x
+        t0 <- findType (enumName n Nothing)
+        p0 <- LLVM.IRBuilder.alloca t0 Nothing 0
+        LLVM.IRBuilder.store p0 0 a
         tagValue <- LLVM.IRBuilder.extractValue a [0]
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
         outgoing <- ifor as (\i (CheckedMatchArm xs e) -> do
             vl <- LLVM.IRBuilder.block
             namespaced (do
-                a' <- cast n i a
-                destructureEnum xs a'
+                destructureEnumVariant n i xs p0
                 tailExpr e)
             pure (tagLit i, vl))
         defaultLabel <- LLVM.IRBuilder.block
