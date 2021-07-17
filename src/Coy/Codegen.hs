@@ -230,17 +230,36 @@ fnDef (FnDef (FnDecl n as t) b) =
             -- the appropriate function.
             tailBlock b)
 
-construct
-    :: LLVM.AST.Type
+constructStruct
+    :: Text
     -> Vector (ExprWithoutBlock 'Checked)
     -> IRBuilder LLVM.AST.Operand
-construct t es = do
+constructStruct n es = do
+    t <- findType (structName n)
     p <- LLVM.IRBuilder.alloca t Nothing 0
     Vector.iforM_ es (\i e -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral i)]
         a <- exprWithoutBlock e
         LLVM.IRBuilder.store q 0 a)
     LLVM.IRBuilder.load p 0
+
+constructEnumVariant
+    :: Text
+    -> Int
+    -> Vector (ExprWithoutBlock 'Checked)
+    -> IRBuilder LLVM.AST.Operand
+constructEnumVariant n i es = do
+    t0 <- findType (enumName n Nothing)
+    p0 <- LLVM.IRBuilder.alloca t0 Nothing 0
+    t <- findType (enumName n (Just i))
+    p <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr t)
+    tagPointer <- LLVM.IRBuilder.gep p [index 0, index 0]
+    LLVM.IRBuilder.store tagPointer 0 (LLVM.AST.ConstantOperand (tagLit i))
+    Vector.iforM_ es (\k e -> do
+        q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral k + 1)]
+        a <- exprWithoutBlock e
+        LLVM.IRBuilder.store q 0 a)
+    LLVM.IRBuilder.load p0 0
 
 destructureStruct :: Vector Text -> LLVM.AST.Operand -> IRBuilder ()
 destructureStruct xs a =
@@ -381,12 +400,8 @@ exprWithoutBlock = \case
                     Or -> LLVM.IRBuilder.or
         instruction a0 a1
     CallExpr c -> call c
-    StructExpr n es -> do
-        t <- findType (structName n)
-        construct t es
-    EnumExpr n (EnumVariantIndex i) es -> do
-        t <- findType (enumName n (Just i))
-        construct t es
+    StructExpr n es -> constructStruct n es
+    EnumExpr n (EnumVariantIndex i) es -> constructEnumVariant n i es
     PrintLnExpr (CheckedFormatString f) es -> do
         fn <- findValue "printf"
         symbolName <- freshSymbolName
