@@ -119,6 +119,9 @@ varargBuiltins =
 tagType :: LLVM.AST.Type
 tagType = LLVM.AST.Type.i8
 
+tagLit :: Int -> LLVM.AST.Constant.Constant
+tagLit = LLVM.AST.Constant.Int 8 . fromIntegral
+
 tagSize :: Int
 tagSize = 1
 
@@ -218,10 +221,11 @@ fnDef (FnDef (FnDecl n as t) b) =
 
     body operands = do
         LLVM.IRBuilder.emitBlockStart (LLVM.AST.Name "entry")
-        result <- namespaced (do
+        namespaced (do
             zipWithM_ bindValue [an | FnArg an _ <- toList as] operands
-            block b)
-        LLVM.IRBuilder.ret result
+            -- This block is in tail position, so we make sure to hand it to
+            -- the appropriate function.
+            tailBlock b)
 
 cast :: Text -> Int -> LLVM.AST.Operand -> IRBuilder LLVM.AST.Operand
 cast n i a = do
@@ -311,8 +315,6 @@ exprWithBlock = \case
         LLVM.IRBuilder.unreachable
         joinLabel <- LLVM.IRBuilder.block
         LLVM.IRBuilder.phi [(result, vl) | (_, result, vl) <- incoming]
-      where
-        tagLit = LLVM.AST.Constant.Int 8 . fromIntegral
 
 exprWithoutBlock :: ExprWithoutBlock 'Checked -> IRBuilder LLVM.AST.Operand
 exprWithoutBlock = \case
@@ -398,3 +400,46 @@ call (Call n es) = do
     fn <- findValue n
     as <- traverse exprWithoutBlock es
     LLVM.IRBuilder.call fn [(a, mempty) | a <- toList as]
+
+-- Top-level entry point for blocks in tail position; generates the required
+-- return instruction.
+tailBlock :: Block 'Checked -> IRBuilder ()
+tailBlock (Block ss e) = do
+    traverse_ statement ss
+    tailExpr e
+
+tailExpr :: Expr 'Checked -> IRBuilder ()
+tailExpr = \case
+    ExprWithBlock e -> tailExprWithBlock e
+    -- Expressions without blocks are handled directly.
+    ExprWithoutBlock e -> do
+        result <- exprWithoutBlock e
+        LLVM.IRBuilder.ret result
+
+-- Expressions with blocks need more consideration: instead of joining the
+-- different branches using a phi node and then returning, we return separately
+-- in each branch. This has the effect that function calls that are in tail
+-- position in the AST are also in tail position in the generated IR.
+tailExprWithBlock :: ExprWithBlock 'Checked -> IRBuilder ()
+tailExprWithBlock = \case
+    BlockExpr b -> namespaced (tailBlock b)
+    IfExpr x thenBlock elseBlock -> mdo
+        a <- findValue x
+        LLVM.IRBuilder.condBr a thenLabel elseLabel
+        thenLabel <- LLVM.IRBuilder.block
+        namespaced (tailBlock thenBlock)
+        elseLabel <- LLVM.IRBuilder.block
+        namespaced (tailBlock elseBlock)
+    CheckedMatchExpr x n as -> mdo
+        a <- findValue x
+        tagValue <- LLVM.IRBuilder.extractValue a [0]
+        LLVM.IRBuilder.switch tagValue defaultLabel outgoing
+        outgoing <- ifor as (\i (CheckedMatchArm xs e) -> do
+            vl <- LLVM.IRBuilder.block
+            namespaced (do
+                a' <- cast n i a
+                destructureEnum xs a'
+                tailExpr e)
+            pure (tagLit i, vl))
+        defaultLabel <- LLVM.IRBuilder.block
+        LLVM.IRBuilder.unreachable
