@@ -27,10 +27,12 @@ import qualified Data.Text.Encoding as Text.Encoding
 import qualified Data.Vector as Vector
 import qualified LLVM.AST
 import qualified LLVM.AST.Constant
-import qualified LLVM.AST.IntegerPredicate
 import qualified LLVM.AST.FloatingPointPredicate
+import qualified LLVM.AST.Global
+import qualified LLVM.AST.IntegerPredicate
+import qualified LLVM.AST.Linkage
 import qualified LLVM.AST.Type
-import qualified LLVM.IRBuilder
+import qualified LLVM.IRBuilder.Extended as LLVM.IRBuilder
 
 import Coy.Syntax
 
@@ -141,7 +143,7 @@ alignedTo :: Int -> Int -> Int
 alignedTo x a = (x + a - 1) `div` a * a
 
 codegen :: Module 'Checked -> ModuleBuilder ()
-codegen (Module typeDefs fnDefs) = mdo
+codegen (CheckedModule typeDefs mainFnDef otherFnDefs) = mdo
     -- Define the unit type.
     defineType "unit" (LLVM.AST.StructureType False mempty)
 
@@ -181,11 +183,25 @@ codegen (Module typeDefs fnDefs) = mdo
         reference <- LLVM.IRBuilder.externVarArgs (reifyName n) ats returnType
         bindValue n reference)
 
-    -- Add all functions to the 'Context'.
-    zipWithM_ (\(FnDef (FnDecl n _ _) _) fn -> bindValue n fn) fnDefs fns
+    let fnDefs = mainFnDef : otherFnDefs
 
-    -- Define the functions.
-    fns <- traverse fnDef fnDefs
+    -- Add all functions to the 'Context'.
+    zipWithM_ (\fd fn -> bindValue (fnDefName fd) fn) fnDefs fns
+
+    -- Define non-main functions with private linkage in order to unlock
+    -- further optimizations.
+    let privateLinkage = LLVM.AST.functionDefaults
+            {LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private}
+
+    otherFns <- traverse (fnDef privateLinkage) otherFnDefs
+
+    -- Define main.
+    let externalLinkage = LLVM.AST.functionDefaults
+            {LLVM.AST.Global.linkage = LLVM.AST.Linkage.External}
+
+    mainFn <- fnDef externalLinkage mainFnDef
+
+    let fns = mainFn : otherFns
 
     pure ()
   where
@@ -210,15 +226,19 @@ codegen (Module typeDefs fnDefs) = mdo
 
     size = (sizeMemo Map.!)
 
-fnDef :: FnDef 'Checked -> ModuleBuilder LLVM.AST.Operand
-fnDef (FnDef (FnDecl n as t) b) =
-    LLVM.IRBuilder.function n' as' t' body
+fnDef
+    :: LLVM.AST.Global
+    -- ^ Partially defined 'LLVM.AST.Function' that holds the function defaults;
+    -- see 'LLVM.AST.functionDefaults'.
+    -> FnDef 'Checked
+    -- ^ The function to define.
+    -> ModuleBuilder LLVM.AST.Operand
+fnDef functionDefaults' (FnDef (FnDecl n as t) b) =
+    LLVM.IRBuilder.functionWith functionDefaults' n' ats' t' body
   where
     n' = reifyName n
 
-    reifyArgument (FnArg _ at) = (reifyType at, LLVM.IRBuilder.NoParameterName)
-
-    as' = [reifyArgument a | a <- toList as]
+    ats' = [reifyType at | FnArg _ at <- toList as]
 
     t' = reifyType t
 

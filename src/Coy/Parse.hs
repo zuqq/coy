@@ -40,7 +40,7 @@ parse :: Text -> Either ParseError (Module 'Unchecked)
 parse s = do
     let result = Parser.parseOnly p s
     (typeDefs, fnDefs) <- bimap ParseError partitionEithers result
-    pure (Module typeDefs fnDefs)
+    pure (UncheckedModule typeDefs fnDefs)
   where
     p = space *> many (Parser.eitherP typeDef fnDef) <* Parser.endOfInput
 

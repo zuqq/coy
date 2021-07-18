@@ -22,7 +22,7 @@ import Control.Monad.Trans.State.Strict (StateT, evalStateT)
 import Data.Bifunctor (first)
 import Data.Containers.ListUtils (nubOrd)
 import Data.Foldable (toList, traverse_)
-import Data.List (sort, sortOn)
+import Data.List (partition, sort, sortOn)
 import Data.List.Index (indexed)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
@@ -75,6 +75,8 @@ data SemanticErrorMessage
     | EnumVariantNotFound Text Text
     | FnNotFound Text
     | ValueNotFound Text
+    | MainFnDefMissing
+    | MainFnDefTypeMismatch (FnDef 'Checked)
     | FnDefTypeMismatch
     -- ^ The declared and observed return type of a function differ.
         Text
@@ -260,7 +262,7 @@ namespaced p = do
     pure result
 
 semantic :: Module 'Unchecked -> Either SemanticError (Module 'Checked)
-semantic (Module typeDefs fnDefs) = do
+semantic (UncheckedModule typeDefs fnDefs) = do
     (typeDefs', fnDecls') <- semantic0 (typeDefs, [d | FnDef d _ <- fnDefs])
 
     let ss = Map.fromList [(n, ts) | StructDef n ts <- typeDefs']
@@ -276,7 +278,16 @@ semantic (Module typeDefs fnDefs) = do
     fnDefs' <- runExcept (
         evalStateT (zipWithM fnDef fnDecls' [b | FnDef _ b <- fnDefs]) context)
 
-    pure (Module typeDefs' fnDefs')
+    let (mainFnDefs', otherFnDefs') =
+            partition (\fd -> fnDefName fd == "main") fnDefs'
+
+    case mainFnDefs' of
+        [mainFnDef'@(FnDef (FnDecl _ as t) _)]
+            | Vector.null as, t == Unit ->
+                pure (CheckedModule typeDefs' mainFnDef' otherFnDefs')
+            | otherwise ->
+                throwEmptySemanticError (MainFnDefTypeMismatch mainFnDef')
+        _ -> throwEmptySemanticError MainFnDefMissing
   where
     enumVariants vs =
         Map.fromList [(v, (i, ts)) | (i, EnumVariant v ts) <- indexed vs]

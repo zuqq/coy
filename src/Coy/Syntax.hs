@@ -11,8 +11,22 @@ import Data.Vector (Vector)
 
 data Status = Unchecked | Checked
 
-data Module (u :: Status) = Module [TypeDef u] [FnDef u]
-    deriving Show
+data Module (u :: Status) where
+    UncheckedModule
+        :: [TypeDef 'Unchecked]
+        -> [FnDef 'Unchecked]
+        -> Module 'Unchecked
+
+    CheckedModule
+        :: [TypeDef 'Checked]
+        -- ^ Struct and enum definitions.
+        -> FnDef 'Checked
+        -- ^ Definition of the main function.
+        -> [FnDef 'Checked]
+        -- ^ Definitions of the other functions.
+        -> Module 'Checked
+
+deriving instance Show (Module u)
 
 data TypeDef (u :: Status)
     = StructDef Text (Vector (Type u))
@@ -39,6 +53,9 @@ data EnumVariant (u :: Status) = EnumVariant Text (Vector (Type u))
 
 data FnDef (u :: Status) = FnDef (FnDecl u) (Block u)
     deriving Show
+
+fnDefName :: FnDef u -> Text
+fnDefName (FnDef (FnDecl n _ _) _) = n
 
 data FnDecl (u :: Status) = FnDecl Text (Vector (FnArg u)) (Type u)
     deriving Show
