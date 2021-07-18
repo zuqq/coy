@@ -129,17 +129,17 @@ exprWithBlock = blockExpr <|> ifExpr <|> matchExpr
 
     ifExpr = do
         "if" *> space1
-        x <- valueName
+        e <- exprWithoutBlock
         b0 <- block
         "else" *> space1
         b1 <- block
-        pure (IfExpr x b0 b1)
+        pure (IfExpr e b0 b1)
 
     matchExpr = do
         "match" *> space1
-        x <- valueName
+        e <- exprWithoutBlock
         as <- withinBraces (commaSeparated matchArm)
-        pure (UncheckedMatchExpr x as)
+        pure (UncheckedMatchExpr e as)
 
 matchArm :: Parser (MatchArm 'Unchecked)
 matchArm = do

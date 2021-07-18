@@ -81,18 +81,18 @@ data Expr (u :: Status)
 
 data ExprWithBlock (u :: Status) where
     BlockExpr :: Block u -> ExprWithBlock u
-    IfExpr :: Text -> Block u -> Block u -> ExprWithBlock u
+    IfExpr :: ExprWithoutBlock u -> Block u -> Block u -> ExprWithBlock u
 
     UncheckedMatchExpr
-        :: Text
-        -- ^ Name of the scrutinee.
+        :: ExprWithoutBlock 'Unchecked
+        -- ^ Scrutinee.
         -> [MatchArm 'Unchecked]
         -- ^ Match arms.
         -> ExprWithBlock 'Unchecked
 
     CheckedMatchExpr
-        :: Text
-        -- ^ Name of the scrutinee.
+        :: ExprWithoutBlock 'Checked
+        -- ^ Scrutinee.
         -> Text
         -- ^ Name of the enum.
         -> [MatchArm 'Checked]

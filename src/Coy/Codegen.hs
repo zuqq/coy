@@ -327,8 +327,8 @@ expr = \case
 exprWithBlock :: ExprWithBlock 'Checked -> IRBuilder LLVM.AST.Operand
 exprWithBlock = \case
     BlockExpr b -> namespaced (block b)
-    IfExpr x thenBlock elseBlock -> mdo
-        a <- findValue x
+    IfExpr e thenBlock elseBlock -> mdo
+        a <- exprWithoutBlock e
         LLVM.IRBuilder.condBr a thenLabel elseLabel
         thenLabel <- LLVM.IRBuilder.block
         thenValue <- namespaced (block thenBlock)
@@ -338,12 +338,12 @@ exprWithBlock = \case
         LLVM.IRBuilder.br joinLabel
         joinLabel <- LLVM.IRBuilder.block
         LLVM.IRBuilder.phi [(thenValue, thenLabel), (elseValue, elseLabel)]
-    CheckedMatchExpr x n as -> mdo
-        a <- findValue x
+    CheckedMatchExpr e0 n as -> mdo
+        a0 <- exprWithoutBlock e0
         t0 <- findType (enumName n Nothing)
         p0 <- LLVM.IRBuilder.alloca t0 Nothing 0
-        LLVM.IRBuilder.store p0 0 a
-        tagValue <- LLVM.IRBuilder.extractValue a [0]
+        LLVM.IRBuilder.store p0 0 a0
+        tagValue <- LLVM.IRBuilder.extractValue a0 [0]
         let outgoing = [(tagLit i, vl) | (i, _, vl) <- incoming]
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
         incoming <- ifor as (\i (CheckedMatchArm xs e) -> do
@@ -463,19 +463,19 @@ tailExpr = \case
 tailExprWithBlock :: ExprWithBlock 'Checked -> IRBuilder ()
 tailExprWithBlock = \case
     BlockExpr b -> namespaced (tailBlock b)
-    IfExpr x thenBlock elseBlock -> mdo
-        a <- findValue x
+    IfExpr e thenBlock elseBlock -> mdo
+        a <- exprWithoutBlock e
         LLVM.IRBuilder.condBr a thenLabel elseLabel
         thenLabel <- LLVM.IRBuilder.block
         namespaced (tailBlock thenBlock)
         elseLabel <- LLVM.IRBuilder.block
         namespaced (tailBlock elseBlock)
-    CheckedMatchExpr x n as -> mdo
-        a <- findValue x
+    CheckedMatchExpr e0 n as -> mdo
+        a0 <- exprWithoutBlock e0
         t0 <- findType (enumName n Nothing)
         p0 <- LLVM.IRBuilder.alloca t0 Nothing 0
-        LLVM.IRBuilder.store p0 0 a
-        tagValue <- LLVM.IRBuilder.extractValue a [0]
+        LLVM.IRBuilder.store p0 0 a0
+        tagValue <- LLVM.IRBuilder.extractValue a0 [0]
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
         outgoing <- ifor as (\i (CheckedMatchArm xs e) -> do
             vl <- LLVM.IRBuilder.block

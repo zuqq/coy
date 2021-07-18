@@ -89,8 +89,8 @@ data SemanticErrorMessage
         -- ^ Observed return type.
     | IfScrutineeTypeMismatch
     -- ^ The scrutinee in an if expression is not of type @Bool@.
-        Text
-        -- ^ Name of the scrutinee.
+        (ExprWithoutBlock 'Unchecked)
+        -- ^ The scrutinee.
         (Type 'Checked)
         -- ^ Actual type of the scrutinee.
     | IfBlocksTypeMismatch
@@ -105,8 +105,8 @@ data SemanticErrorMessage
         -- ^ Result type of the second block.
     | MatchScrutineeTypeMismatch
     -- ^ The scrutinee in a match expression is not of enum type.
-        Text
-        -- ^ Name of the scrutinee.
+        (ExprWithoutBlock 'Unchecked)
+        -- ^ The scrutinee.
         (Type 'Checked)
         -- ^ Type of the scrutinee.
     | MatchArmEnumMismatch
@@ -422,16 +422,16 @@ exprWithBlock
     -> Semantic (ExprWithBlock 'Checked, Type 'Checked)
 exprWithBlock = \case
     BlockExpr b -> fmap (first BlockExpr) (block b)
-    IfExpr x b0 b1 -> do
-        t <- findValue x
-        when (t /= Bool) (throwSemanticError (IfScrutineeTypeMismatch x t))
+    IfExpr e b0 b1 -> do
+        (e', t) <- exprWithoutBlock e
+        when (t /= Bool) (throwSemanticError (IfScrutineeTypeMismatch e t))
         (b0', t0) <- block b0
         (b1', t1) <- block b1
         when (t0 /= t1) (throwSemanticError (IfBlocksTypeMismatch b0 t0 b1 t1))
-        pure (IfExpr x b0' b1', t0)
-    UncheckedMatchExpr x as -> do
-        t <- findValue x
-        case t of
+        pure (IfExpr e' b0' b1', t0)
+    UncheckedMatchExpr e0 as -> do
+        (e0', t0) <- exprWithoutBlock e0
+        case t0 of
             Enum n -> do
                 vs <- fmap Map.keysSet (findEnum n)
 
@@ -467,11 +467,11 @@ exprWithBlock = \case
                         let as' = [a' | (_, a', _) <- sortOn (view _1) iats']
 
                         -- Assemble the checked match expression.
-                        pure (CheckedMatchExpr x n as', resultType)
+                        pure (CheckedMatchExpr e0' n as', resultType)
                     _ ->
                         throwSemanticError
                             (MatchArmTypeMismatch as resultTypes)
-            _ -> throwSemanticError (MatchScrutineeTypeMismatch x t)
+            _ -> throwSemanticError (MatchScrutineeTypeMismatch e0 t0)
 
 exprWithoutBlock
     :: ExprWithoutBlock 'Unchecked
