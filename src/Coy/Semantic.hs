@@ -34,6 +34,8 @@ import Lens.Micro.Mtl ((%=), (.=), use, view)
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+import qualified Data.Text.Lazy as Text.Lazy
+import qualified Data.Text.Lazy.Builder as Text.Lazy.Builder
 import qualified Data.Vector as Vector
 
 import Coy.Syntax
@@ -562,17 +564,20 @@ exprWithoutBlock = \case
                 pure (s <> s', cs')
             step (s, c : "{}" : cs') t = do
                 s' <- formatSpecifier t
-                pure (s <> c <> s', cs')
+                pure (s <> Text.Lazy.Builder.fromText c <> s', cs')
             -- This covers the case where there are not enough holes for the
             -- given argument list.
             step _ _ = abort
 
-        (result, leftovers) <- foldM step (mempty, cs) ts
+        (builder, leftovers) <- foldM step (mempty, cs) ts
 
         -- Check that there are no parameters left.
         if "{}" `elem` leftovers then
             abort
         else do
+            let result =
+                    Text.Lazy.toStrict (Text.Lazy.Builder.toLazyText builder)
+
             -- At this point there should be at most one chunk left; @mconcat@
             -- conveniently handles both cases. We also make sure to add the
             -- trailing line feed character here.
