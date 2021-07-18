@@ -105,7 +105,7 @@ index = LLVM.IRBuilder.int32
 
 reifyType :: Type 'Checked -> LLVM.AST.Type
 reifyType = \case
-    Unit -> LLVM.AST.NamedTypeReference (reifyName "unit")
+    Unit -> LLVM.AST.NamedTypeReference "unit"
     Bool -> LLVM.AST.Type.i1
     I64 -> LLVM.AST.Type.i64
     F64 -> LLVM.AST.Type.double
@@ -243,7 +243,7 @@ fnDef functionDefaults' (FnDef (FnDecl n as t) b) =
     t' = reifyType t
 
     body operands = do
-        LLVM.IRBuilder.emitBlockStart (LLVM.AST.Name "entry")
+        LLVM.IRBuilder.emitBlockStart "entry"
         namespaced (do
             zipWithM_ bindValue [an | FnArg an _ <- toList as] operands
             -- This block is in tail position, so we make sure to hand it to
@@ -433,7 +433,7 @@ exprWithoutBlock = \case
   where
     unitLit =
         LLVM.AST.ConstantOperand
-            (LLVM.AST.Constant.Struct (Just (reifyName "unit")) False mempty)
+            (LLVM.AST.Constant.Struct (Just "unit") False mempty)
 
 call :: Call 'Checked -> IRBuilder LLVM.AST.Operand
 call (Call n es) = do
