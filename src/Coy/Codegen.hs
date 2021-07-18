@@ -117,8 +117,17 @@ defineType n t' = do
     td' <- LLVM.IRBuilder.typedef (reifyName n) (Just t')
     bindType n td'
 
-varargBuiltins :: [(Text, [LLVM.AST.Type], LLVM.AST.Type)]
-varargBuiltins =
+externFns :: [(Text, LLVM.AST.Name, [LLVM.AST.Type], LLVM.AST.Type)]
+externFns =
+    [("sqrt", "llvm.sqrt.f64", [LLVM.AST.Type.double], LLVM.AST.Type.double)]
+
+-- Variadic extern functions can't be called from user code, so they are
+-- hidden behind a prefix.
+variadicFnName :: Text -> Text
+variadicFnName = ("variadic." <>)
+
+variadicExternFns :: [(Text, [LLVM.AST.Type], LLVM.AST.Type)]
+variadicExternFns =
     [("printf", [LLVM.AST.Type.ptr LLVM.AST.Type.i8], LLVM.AST.Type.i32)]
 
 tagType :: LLVM.AST.Type
@@ -178,10 +187,15 @@ codegen (CheckedModule typeDefs mainFnDef otherFnDefs) = mdo
 
                 defineType vn vt'))
 
-    -- Declare variadic built-in functions like printf.
-    for_ varargBuiltins (\(n, ats, returnType) -> do
-        reference <- LLVM.IRBuilder.externVarArgs (reifyName n) ats returnType
+    -- Declare non-variadic extern functions.
+    for_ externFns (\(n, n', ats', t') -> do
+        reference <- LLVM.IRBuilder.extern n' ats' t'
         bindValue n reference)
+
+    -- Declare variadic extern functions.
+    for_ variadicExternFns (\(n, ats', t') -> do
+        reference <- LLVM.IRBuilder.externVarArgs (reifyName n) ats' t'
+        bindValue (variadicFnName n) reference)
 
     let fnDefs = mainFnDef : otherFnDefs
 
@@ -423,7 +437,7 @@ exprWithoutBlock = \case
     StructExpr n es -> constructStruct n es
     EnumExpr n (EnumVariantIndex i) es -> constructEnumVariant n i es
     PrintLnExpr (CheckedFormatString f) es -> do
-        fn <- findValue "printf"
+        fn <- findValue (variadicFnName "printf")
         symbolName <- freshSymbolName
         symbol <- LLVM.IRBuilder.globalStringPtr (Text.unpack f) symbolName
         let a0 = LLVM.AST.ConstantOperand symbol

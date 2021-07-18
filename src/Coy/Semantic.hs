@@ -263,6 +263,9 @@ namespaced p = do
     values .= backup
     pure result
 
+intrinsicFns :: [(Text, (Vector (Type 'Checked), Type 'Checked))]
+intrinsicFns = [("sqrt", (Vector.singleton F64, F64))]
+
 semantic :: Module 'Unchecked -> Either SemanticError (Module 'Checked)
 semantic (UncheckedModule typeDefs fnDefs) = do
     (typeDefs', fnDecls') <- semantic0 (typeDefs, [d | FnDef d _ <- fnDefs])
@@ -271,7 +274,9 @@ semantic (UncheckedModule typeDefs fnDefs) = do
 
     let es = Map.fromList [(n, enumVariants vs) | EnumDef n vs <- typeDefs']
 
-    let fs = Map.fromList [(n, (fmap typeOf as, t)) | FnDecl n as t <- fnDecls']
+    let fs = Map.fromList (
+                intrinsicFns
+            <>  [(n, (fmap typeOf as, t)) | FnDecl n as t <- fnDecls'])
 
     let vs = mempty
 
