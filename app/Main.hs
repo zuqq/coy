@@ -1,7 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import System.Environment (getArgs)
+import System.Exit (exitFailure)
 import System.FilePath (takeBaseName)
+import System.IO (hPrint, hPutStrLn, stderr)
 
 import qualified Data.Text.IO as Text.IO
 import qualified Data.Text.Lazy.IO as Text.Lazy.IO
@@ -19,15 +21,19 @@ main = do
 
     case parse s of
         Left e -> do
-            putStrLn "A parse error occurred:\n"
+            hPutStrLn stderr "A parse error occurred:\n"
 
-            print e
+            hPrint stderr e
+
+            exitFailure
         Right unchecked -> do
             case semantic unchecked of
                 Left e -> do
-                    putStrLn "A semantic error occurred:\n"
+                    hPutStrLn stderr "A semantic error occurred:\n"
 
-                    print e
+                    hPrint stderr e
+
+                    exitFailure
                 Right checked -> do
                     let n = takeBaseName filePath
 
