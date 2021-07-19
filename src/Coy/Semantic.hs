@@ -272,7 +272,9 @@ intrinsicFns =
 
 semantic :: Module 'Unchecked -> Either SemanticError (Module 'Checked)
 semantic (UncheckedModule typeDefs fnDefs) = do
-    (typeDefs', fnDecls') <- semantic0 (typeDefs, [d | FnDef d _ <- fnDefs])
+    let fnDecls = [d | FnDef d _ <- fnDefs]
+
+    (typeDefs', fnDecls') <- typeDefsAndFnDecls (typeDefs, fnDecls)
 
     let ss = Map.fromList [(n, ts) | StructDef n ts <- typeDefs']
 
@@ -308,10 +310,10 @@ semantic (UncheckedModule typeDefs fnDefs) = do
 -- The checked type definitions are topologically sorted; the order of the
 -- checked function declarations matches the order of the corresponding
 -- unchecked function declarations.
-semantic0
+typeDefsAndFnDecls
     :: ([TypeDef 'Unchecked], [FnDecl 'Unchecked])
     -> Either SemanticError ([TypeDef 'Checked], [FnDecl 'Checked])
-semantic0 (tds, fds) = do
+typeDefsAndFnDecls (tds, fds) = do
     let structNames = Set.fromList [n | StructDef n _ <- tds]
 
     let enumNames = Set.fromList [n | EnumDef n _ <- tds]
