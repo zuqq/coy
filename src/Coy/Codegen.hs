@@ -119,7 +119,10 @@ defineType n t' = do
 
 externFns :: [(Text, LLVM.AST.Name, [LLVM.AST.Type], LLVM.AST.Type)]
 externFns =
-    [("sqrt", "llvm.sqrt.f64", [LLVM.AST.Type.double], LLVM.AST.Type.double)]
+    [ ("cos", "llvm.cos.f64", [LLVM.AST.Type.double], LLVM.AST.Type.double)
+    , ("sin", "llvm.sin.f64", [LLVM.AST.Type.double], LLVM.AST.Type.double)
+    , ("sqrt", "llvm.sqrt.f64", [LLVM.AST.Type.double], LLVM.AST.Type.double)
+    ]
 
 -- Variadic extern functions can't be called from user code, so they are
 -- hidden behind a prefix.

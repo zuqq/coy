@@ -264,7 +264,11 @@ namespaced p = do
     pure result
 
 intrinsicFns :: [(Text, (Vector (Type 'Checked), Type 'Checked))]
-intrinsicFns = [("sqrt", (Vector.singleton F64, F64))]
+intrinsicFns =
+    [ ("cos", (Vector.singleton F64, F64))
+    , ("sin", (Vector.singleton F64, F64))
+    , ("sqrt", (Vector.singleton F64, F64))
+    ]
 
 semantic :: Module 'Unchecked -> Either SemanticError (Module 'Checked)
 semantic (UncheckedModule typeDefs fnDefs) = do
