@@ -347,18 +347,21 @@ exprWithBlock = \case
     IfExpr e thenBlock elseBlock -> mdo
         a <- exprWithoutBlock e
         LLVM.IRBuilder.condBr a thenInLabel elseInLabel
+
         thenInLabel <- LLVM.IRBuilder.block
         thenOut <- namespaced (do
             thenValue <- block thenBlock
             thenOutLabel <- LLVM.IRBuilder.currentBlock
             pure (thenValue, thenOutLabel))
         LLVM.IRBuilder.br joinLabel
+
         elseInLabel <- LLVM.IRBuilder.block
         elseOut <- namespaced (do
             elseValue <- block elseBlock
             elseOutLabel <- LLVM.IRBuilder.currentBlock
             pure (elseValue, elseOutLabel))
         LLVM.IRBuilder.br joinLabel
+
         joinLabel <- LLVM.IRBuilder.block
         LLVM.IRBuilder.phi [thenOut, elseOut]
     CheckedMatchExpr e0 n as -> mdo
@@ -369,6 +372,7 @@ exprWithBlock = \case
         tagValue <- LLVM.IRBuilder.extractValue a0 [0]
         let outgoing = [(tagLit i, inLabel) | ((i, inLabel), _) <- branches]
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
+
         branches <- ifor as (\i (CheckedMatchArm xs e) -> do
             inLabel <- LLVM.IRBuilder.block
             result <- namespaced (do
@@ -377,10 +381,12 @@ exprWithBlock = \case
             outLabel <- LLVM.IRBuilder.currentBlock
             LLVM.IRBuilder.br joinLabel
             pure ((i, inLabel), (result, outLabel)))
+
         defaultLabel <- LLVM.IRBuilder.block
         -- The default block is unreachable because the match expression covers
         -- all variants.
         LLVM.IRBuilder.unreachable
+
         joinLabel <- LLVM.IRBuilder.block
         LLVM.IRBuilder.phi (fmap snd branches)
 
@@ -491,8 +497,10 @@ tailExprWithBlock = \case
     IfExpr e thenBlock elseBlock -> mdo
         a <- exprWithoutBlock e
         LLVM.IRBuilder.condBr a thenLabel elseLabel
+
         thenLabel <- LLVM.IRBuilder.block
         namespaced (tailBlock thenBlock)
+
         elseLabel <- LLVM.IRBuilder.block
         namespaced (tailBlock elseBlock)
     CheckedMatchExpr e0 n as -> mdo
@@ -502,11 +510,13 @@ tailExprWithBlock = \case
         LLVM.IRBuilder.store p0 0 a0
         tagValue <- LLVM.IRBuilder.extractValue a0 [0]
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
+
         outgoing <- ifor as (\i (CheckedMatchArm xs e) -> do
             label <- LLVM.IRBuilder.block
             namespaced (do
                 destructureEnumVariant n i xs p0
                 tailExpr e)
             pure (tagLit i, label))
+
         defaultLabel <- LLVM.IRBuilder.block
         LLVM.IRBuilder.unreachable
