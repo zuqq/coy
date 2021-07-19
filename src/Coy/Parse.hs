@@ -259,11 +259,19 @@ lit = unitLit <|> boolLit <|> f64Lit <|> i64Lit
 
     i64Lit = fmap I64Lit Parser.decimal <* space
 
+comment :: Parser ()
+comment = do
+    void "//"
+    Parser.skipWhile (not . Parser.isEndOfLine)
+    Parser.skipSpace
+
 space :: Parser ()
-space = Parser.skipSpace
+space = Parser.skipSpace *> Parser.skipMany comment
 
 space1 :: Parser ()
-space1 = void (Parser.takeWhile1 isSpace)
+space1 = do
+    void (Parser.takeWhile1 isSpace) <|> comment
+    Parser.skipMany comment
 
 symbol :: Text -> Parser Text
 symbol s = Parser.string s <* space
