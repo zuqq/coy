@@ -29,7 +29,7 @@ import Data.Map.Strict (Map)
 import Data.Text (Text)
 import Data.Traversable (for)
 import Data.Vector (Vector)
-import Lens.Micro (Lens', _1, lens )
+import Lens.Micro (Lens', _1, _2, _3, lens)
 import Lens.Micro.Mtl ((%=), (.=), use, view)
 
 import qualified Data.Map.Strict as Map
@@ -469,11 +469,11 @@ exprWithBlock = \case
                         throwSemanticError (MatchArmArityMismatch n v xs))
 
                 -- Check that the types of the match arms are all the same.
-                let resultTypes = [resultType | (_, _, resultType) <- iats']
+                let resultTypes = fmap (view _3) iats'
                 case nubOrd resultTypes of
                     [resultType] -> do
                         -- Sort the checked match arms by variant index.
-                        let as' = [a' | (_, a', _) <- sortOn (view _1) iats']
+                        let as' = fmap (view _2) (sortOn (view _1) iats')
 
                         -- Assemble the checked match expression.
                         pure (CheckedMatchExpr e0' n as', resultType)
