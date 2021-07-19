@@ -178,10 +178,10 @@ exprWithoutBlock = buildExpressionParser operators simpleExpr
             [
                 Infix (symbol "==" $> BinaryOpExpr (Cmp Eq)) AssocNone,
                 Infix (symbol "!=" $> BinaryOpExpr (Cmp Ne)) AssocNone,
-                Infix (symbolic '<' $> BinaryOpExpr (Cmp Lt)) AssocNone,
-                Infix (symbolic '>' $> BinaryOpExpr (Cmp Gt)) AssocNone,
                 Infix (symbol "<=" $> BinaryOpExpr (Cmp Le)) AssocNone,
-                Infix (symbol ">=" $> BinaryOpExpr (Cmp Ge)) AssocNone
+                Infix (symbol ">=" $> BinaryOpExpr (Cmp Ge)) AssocNone,
+                Infix (symbolic '<' $> BinaryOpExpr (Cmp Lt)) AssocNone,
+                Infix (symbolic '>' $> BinaryOpExpr (Cmp Gt)) AssocNone
             ],
             [Infix (symbol "&&" $> BinaryOpExpr And) AssocLeft],
             [Infix (symbol "||" $> BinaryOpExpr Or) AssocLeft]
