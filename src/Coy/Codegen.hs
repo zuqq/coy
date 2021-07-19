@@ -155,6 +155,8 @@ alignedTo :: Int -> Int -> Int
 alignedTo x a = (x + a - 1) `div` a * a
 
 codegen :: Module 'Checked -> ModuleBuilder ()
+-- Here and elsewhere the @-XRecursiveDo@ extension allows me to use forward
+-- references without too much trouble.
 codegen (CheckedModule typeDefs mainFnDef otherFnDefs) = mdo
     -- Define the unit type.
     defineType "unit" (LLVM.AST.StructureType False mempty)
@@ -228,6 +230,8 @@ codegen (CheckedModule typeDefs mainFnDef otherFnDefs) = mdo
         Map.fromList
             [(n, [ts | EnumVariant _ ts <- vs]) | EnumDef n vs <- typeDefs]
 
+    -- This definition uses the lazy @Map@ type in order to avoid writing down
+    -- the imperative way of computing the values.
     sizeMemo = Map.fromList (
             [(Unit, 0), (Bool, 1), (I64, 8), (F64, 8)]
         <>  [(t, sizeRec t) | StructDef n _ <- typeDefs, let t = Struct n]
@@ -263,8 +267,6 @@ fnDef functionDefaults' (FnDef (FnDecl n as t) b) =
         LLVM.IRBuilder.emitBlockStart "entry"
         namespaced (do
             zipWithM_ bindValue [an | FnArg an _ <- toList as] operands
-            -- This block is in tail position, so we make sure to hand it to
-            -- the appropriate function.
             tailBlock b)
 
 constructStruct
@@ -472,8 +474,7 @@ call (Call n es) = do
     as <- traverse exprWithoutBlock es
     LLVM.IRBuilder.call fn [(a, mempty) | a <- toList as]
 
--- Top-level entry point for blocks in tail position; generates the required
--- return instruction.
+-- Entry point for blocks in tail position.
 tailBlock :: Block 'Checked -> IRBuilder ()
 tailBlock (Block ss e) = do
     traverse_ statement ss
@@ -482,15 +483,15 @@ tailBlock (Block ss e) = do
 tailExpr :: Expr 'Checked -> IRBuilder ()
 tailExpr = \case
     ExprWithBlock e -> tailExprWithBlock e
-    -- Expressions without blocks are handled directly.
+    -- Expressions without branches need no special treatment.
     ExprWithoutBlock e -> do
         result <- exprWithoutBlock e
         LLVM.IRBuilder.ret result
 
--- Expressions with blocks need more consideration: instead of joining the
--- different branches using a phi node and then returning, we return separately
+-- Expressions with multiple branches are more subtle: instead of joining the
+-- branches by introducing a phi node and then returning, we return separately
 -- in each branch. This has the effect that function calls that are in tail
--- position in the AST are also in tail position in the generated IR.
+-- position in the AST are also in tail position in the generated LLVM IR.
 tailExprWithBlock :: ExprWithBlock 'Checked -> IRBuilder ()
 tailExprWithBlock = \case
     BlockExpr b -> namespaced (tailBlock b)
