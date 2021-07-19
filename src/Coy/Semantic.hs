@@ -305,6 +305,9 @@ semantic (UncheckedModule typeDefs fnDefs) = do
 
     typeOf (FnArg _ at) = at
 
+-- The checked type definitions are topologically sorted; the order of the
+-- checked function declarations matches the order of the corresponding
+-- unchecked function declarations.
 semantic0
     :: ([TypeDef 'Unchecked], [FnDecl 'Unchecked])
     -> Either SemanticError ([TypeDef 'Checked], [FnDecl 'Checked])
@@ -356,9 +359,7 @@ semantic0 (tds, fds) = do
         t' <- findType t
         pure (FnDecl n as' t'))
 
-    -- We now check that the type definitions are acyclic, by constructing a
-    -- graph with a vertex for every struct or enum and an edge for every
-    -- dependency between them.
+    -- Check that the type definitions are acyclic and topologically sort them.
     let name = \case
             StructDef n _ -> n
             EnumDef n _ -> n
@@ -581,7 +582,7 @@ exprWithoutBlock = \case
 
         (builder, leftovers) <- foldM step (mempty, cs) ts
 
-        -- Check that there are no parameters left.
+        -- Check that there are no holes left.
         if "{}" `elem` leftovers then
             abort
         else do
