@@ -3,11 +3,12 @@
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.FilePath (takeBaseName)
-import System.IO (hPrint, hPutStrLn, stderr)
+import System.IO (hPutStr, stderr)
 
 import qualified Data.Text.IO as Text.IO
 import qualified Data.Text.Lazy.IO as Text.Lazy.IO
 import qualified LLVM.Pretty
+import qualified Text.Pretty.Simple
 
 import Coy.Codegen
 import Coy.Parse
@@ -21,17 +22,17 @@ main = do
 
     case parse s of
         Left e -> do
-            hPutStrLn stderr "A parse error occurred:\n"
+            hPutStr stderr "A parse error occurred:\n\n"
 
-            hPrint stderr e
+            Text.Pretty.Simple.pHPrintNoColor stderr e
 
             exitFailure
         Right unchecked -> do
             case semantic unchecked of
                 Left e -> do
-                    hPutStrLn stderr "A semantic error occurred:\n"
+                    hPutStr stderr "A semantic error occurred:\n\n"
 
-                    hPrint stderr e
+                    Text.Pretty.Simple.pHPrintNoColor stderr e
 
                     exitFailure
                 Right checked -> do
