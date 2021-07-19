@@ -393,6 +393,7 @@ exprWithoutBlock = \case
                     Neg -> LLVM.IRBuilder.sub (LLVM.IRBuilder.int64 0)
                     FNeg -> LLVM.IRBuilder.fsub (LLVM.IRBuilder.double 0)
                     Not -> LLVM.IRBuilder.xor (LLVM.IRBuilder.bit 1)
+                    AsF64 -> flip LLVM.IRBuilder.sitofp (reifyType F64)
                     AsI64 -> flip LLVM.IRBuilder.fptosi (reifyType I64)
         instruction a
     BinaryOpExpr o e0 e1 -> do

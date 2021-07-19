@@ -501,6 +501,7 @@ exprWithoutBlock = \case
             (Neg, I64) -> pure (UnaryOpExpr Neg e', I64)
             (Neg, F64) -> pure (UnaryOpExpr FNeg e', F64)
             (Not, Bool) -> pure (UnaryOpExpr Not e', Bool)
+            (As F64, I64) -> pure (UnaryOpExpr AsF64 e', F64)
             (As I64, F64) -> pure (UnaryOpExpr AsI64 e', I64)
             _ -> throwSemanticError (UnaryOpTypeMismatch o e t)
     BinaryOpExpr o e0 e1 -> do

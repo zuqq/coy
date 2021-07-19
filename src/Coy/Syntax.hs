@@ -148,6 +148,7 @@ data UnaryOp (u :: Status) where
     Not :: UnaryOp u
     -- @as@
     As :: Type 'Unchecked -> UnaryOp 'Unchecked
+    AsF64 :: UnaryOp 'Checked
     AsI64 :: UnaryOp 'Checked
 
 deriving instance Show (UnaryOp u)
