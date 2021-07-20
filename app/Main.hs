@@ -2,7 +2,7 @@
 
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
-import System.FilePath (takeBaseName)
+import System.FilePath ((<.>), takeBaseName)
 import System.IO (hPutStr, stderr)
 
 import qualified Data.Text.IO as Text.IO
@@ -40,4 +40,4 @@ main = do
 
                     let m = buildModule n (codegen checked)
 
-                    Text.Lazy.IO.putStrLn (LLVM.Pretty.ppllvm m)
+                    Text.Lazy.IO.writeFile (n <.> "ll") (LLVM.Pretty.ppllvm m)
