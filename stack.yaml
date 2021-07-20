@@ -6,5 +6,5 @@ extra-deps:
   commit: fb9b5006704404cb5768873f828ffa883873ef07
   subdirs:
   - llvm-hs-pure
-- github: llvm-hs/llvm-hs-pretty
-  commit: 0c02eb3e5386e0dc3c3eef94a84b62bf8efe0612
+- github: zuqq/llvm-hs-pretty
+  commit: 322e8de20bc60cdfd342840f61dd65ce5fb1b961
