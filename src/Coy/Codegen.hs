@@ -91,8 +91,9 @@ structName :: Text -> Text
 structName = ("struct." <>)
 
 enumName :: Text -> Maybe Int -> Text
-enumName n Nothing = "enum." <> n
-enumName n (Just i) = "enum." <> n <> "." <> Text.pack (show i)
+enumName n = \case
+    Nothing -> "enum." <> n
+    Just i -> "enum." <> n <> "." <> Text.pack (show i)
 
 reifyName :: Text -> LLVM.AST.Name
 reifyName =
