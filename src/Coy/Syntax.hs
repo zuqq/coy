@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 module Coy.Syntax where
@@ -33,6 +34,11 @@ data TypeDef (u :: Status)
     | EnumDef Text [EnumVariant u]
     deriving Show
 
+typeDefName :: TypeDef u -> Text
+typeDefName = \case
+    StructDef n _ -> n
+    EnumDef n _ -> n
+
 data Type (u :: Status) where
     Unit :: Type u
     Bool :: Type u
@@ -62,6 +68,9 @@ data FnDecl (u :: Status) = FnDecl Text (Vector (FnArg u)) (Type u)
 
 data FnArg (u :: Status) = FnArg Text (Type u)
     deriving Show
+
+fnArgType :: FnArg u -> Type u
+fnArgType (FnArg _ at) = at
 
 data Block (u :: Status) = Block (Vector (Statement u)) (Expr u)
     deriving Show

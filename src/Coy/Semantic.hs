@@ -282,7 +282,7 @@ semantic (UncheckedModule typeDefs fnDefs) = do
 
     let fs = Map.fromList (
                 intrinsicFns
-            <>  [(n, (fmap typeOf as, t)) | FnDecl n as t <- fnDecls'])
+            <>  [(n, (fmap fnArgType as, t)) | FnDecl n as t <- fnDecls'])
 
     let vs = mempty
 
@@ -304,8 +304,6 @@ semantic (UncheckedModule typeDefs fnDefs) = do
   where
     enumVariants vs =
         Map.fromList [(v, (i, ts)) | (i, EnumVariant v ts) <- indexed vs]
-
-    typeOf (FnArg _ at) = at
 
 -- The checked type definitions are topologically sorted; the order of the
 -- checked function declarations matches the order of the corresponding
@@ -362,18 +360,15 @@ typeDefsAndFnDecls (tds, fds) = do
         pure (FnDecl n as' t'))
 
     -- Check that the type definitions are acyclic and topologically sort them.
-    let name = \case
-            StructDef n _ -> n
-            EnumDef n _ -> n
-
-    let number = (Map.fromList [(name td, i) | (i, td) <- indexed tds] Map.!)
+    let number =
+            (Map.fromList [(typeDefName td, i) | (i, td) <- indexed tds] Map.!)
 
     let neighbors = \case
             StructDef _ ts -> [number n | StructOrEnum n <- toList ts]
             EnumDef _ vs ->
                 [number n | EnumVariant _ ts <- vs, StructOrEnum n <- toList ts]
 
-    let graph = stars [(number (name td), neighbors td) | td <- tds]
+    let graph = stars [(number (typeDefName td), neighbors td) | td <- tds]
 
     let labelWithUncheckedTypeDef = (Map.fromList (indexed tds) Map.!)
 
