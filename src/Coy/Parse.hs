@@ -22,7 +22,8 @@ import Data.Attoparsec.Expr (
     buildExpressionParser)
 import Data.Attoparsec.Text (Parser)
 import Data.Bifunctor (bimap)
-import Data.Char (isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isSpace)
+import Data.Char (
+    isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isPrint, isSpace)
 import Data.Either (partitionEithers)
 import Data.Functor (($>), void)
 import Data.Text (Text)
@@ -236,8 +237,11 @@ exprWithoutBlock = buildExpressionParser operators simpleExpr
             space
             pure cs
 
-        formatStringChunk = "{}" <|>
-            Parser.takeWhile1 (\c -> isAscii c && (isAlphaNum c || c == ' '))
+        formatStringChunk = "{}" <|> formatStringChunkNonHole
+
+        formatStringChunkNonHole =
+            Parser.takeWhile1
+                (\c -> isAscii c && isPrint c && c /= '"' && c /= '{')
 
 lit :: Parser Lit
 lit = unitLit <|> boolLit <|> f64Lit <|> i64Lit
