@@ -143,9 +143,10 @@ tagLit = LLVM.AST.Constant.Int 8 . fromIntegral
 tagSize :: Int
 tagSize = 1
 
+-- Alignment of a type in bytes, as specified by the default data layout.
 alignment :: Type 'Checked -> Int
 alignment = \case
-    Unit -> 1
+    Unit -> 8
     Bool -> 1
     I64 -> 8
     F64 -> 8
