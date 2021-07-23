@@ -135,13 +135,14 @@ variadicExternFns =
     [("printf", [LLVM.AST.Type.ptr LLVM.AST.Type.i8], LLVM.AST.Type.i32)]
 
 tagType :: LLVM.AST.Type
-tagType = LLVM.AST.Type.i8
+tagType = LLVM.AST.Type.i64
 
 tagLit :: Int -> LLVM.AST.Constant.Constant
-tagLit = LLVM.AST.Constant.Int 8 . fromIntegral
+tagLit = LLVM.AST.Constant.Int 64 . fromIntegral
 
+-- Size of the tag in bytes.
 tagSize :: Int
-tagSize = 1
+tagSize = 8
 
 -- Alignment of a type in bytes, as specified by the default data layout.
 alignment :: Type 'Checked -> Int
