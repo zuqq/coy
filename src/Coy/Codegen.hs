@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -8,13 +7,13 @@
 module Coy.Codegen (buildModule, codegen) where
 
 import Control.Monad (void, zipWithM_)
-import Control.Monad.State.Class (MonadState)
 -- We need to use lazy @State@ for @-XRecursiveDo@.
 import Control.Monad.Trans.State (State, evalState)
 import Data.Foldable (foldl', for_, toList, traverse_)
 import Data.List.Index (ifor, ifor_)
 import Data.Map (Map)
 import Data.Text (Text)
+import Data.Traversable (for)
 import Data.Vector (Vector)
 import Lens.Micro (Lens', lens)
 import Lens.Micro.Mtl ((%=), (.=), (<<%=), use)
@@ -37,13 +36,13 @@ import qualified LLVM.IRBuilder.Extended as LLVM.IRBuilder
 import Coy.Syntax
 
 data Context = Context
-    { _types :: Map Text LLVM.AST.Type
+    { _fns :: Map Text LLVM.AST.Operand
     , _values :: Map Text LLVM.AST.Operand
     , _symbolCounter :: Int
     }
 
-types :: Lens' Context (Map Text LLVM.AST.Type)
-types = lens _types (\s ts -> s {_types = ts})
+fns :: Lens' Context (Map Text LLVM.AST.Operand)
+fns = lens _fns (\s fs -> s {_fns = fs})
 
 values :: Lens' Context (Map Text LLVM.AST.Operand)
 values = lens _values (\s vs -> s {_values = vs})
@@ -61,26 +60,19 @@ buildModule n builder =
   where
     n' = ByteString.Short.toShort (ByteString.Char8.pack n)
 
--- These helper functions are polymorphic in the monad @m@ so that I can use
--- them with both @ModuleBuilder@ and @IRBuilder@.
-bindType :: MonadState Context m => Text -> LLVM.AST.Type -> m ()
-bindType n t = types %= Map.insert n t
+bindFn :: Text -> LLVM.AST.Operand -> ModuleBuilder ()
+bindFn n t = fns %= Map.insert n t
 
-findType :: MonadState Context m => Text -> m LLVM.AST.Type
-findType n = fmap (Map.! n) (use types)
+findFn :: Text -> IRBuilder LLVM.AST.Operand
+findFn n = fmap (Map.! n) (use fns)
 
-bindValue :: MonadState Context m => Text -> LLVM.AST.Operand -> m ()
+bindValue :: Text -> LLVM.AST.Operand -> IRBuilder ()
 bindValue x a = values %= Map.insert x a
 
-findValue :: MonadState Context m => Text -> m LLVM.AST.Operand
+findValue :: Text -> IRBuilder LLVM.AST.Operand
 findValue x = fmap (Map.! x) (use values)
 
-freshSymbolName :: MonadState Context m => m LLVM.AST.Name
-freshSymbolName = do
-    i <- symbolCounter <<%= (+ 1)
-    pure (reifyName ("symbol." <> Text.pack (show i)))
-
-namespaced :: MonadState Context m => m a -> m a
+namespaced :: IRBuilder a -> IRBuilder a
 namespaced p = do
     backup <- use values
     result <- p
@@ -95,14 +87,23 @@ enumName n = \case
     Nothing -> "enum." <> n
     Just i -> "enum." <> n <> "." <> Text.pack (show i)
 
+fnName :: Text -> Text
+fnName = ("fn." <>)
+
+symbolName :: Int -> Text
+symbolName i = "symbol." <> Text.pack (show i)
+
 reifyName :: Text -> LLVM.AST.Name
 reifyName =
       LLVM.AST.Name
     . ByteString.Short.toShort
     . Text.Encoding.encodeUtf8
 
-index :: Integer -> LLVM.AST.Operand
-index = LLVM.IRBuilder.int32
+reifyStruct :: Text -> LLVM.AST.Type
+reifyStruct = LLVM.AST.NamedTypeReference . reifyName . structName
+
+reifyEnum :: Text -> Maybe Int -> LLVM.AST.Type
+reifyEnum n = LLVM.AST.NamedTypeReference . reifyName . enumName n
 
 reifyType :: Type 'Checked -> LLVM.AST.Type
 reifyType = \case
@@ -110,29 +111,41 @@ reifyType = \case
     Bool -> LLVM.AST.Type.i1
     I64 -> LLVM.AST.Type.i64
     F64 -> LLVM.AST.Type.double
-    Struct n -> LLVM.AST.NamedTypeReference (reifyName (structName n))
-    Enum n -> LLVM.AST.NamedTypeReference (reifyName (enumName n Nothing))
+    Struct n -> reifyStruct n
+    Enum n -> reifyEnum n Nothing
 
 defineType :: Text -> LLVM.AST.Type -> ModuleBuilder ()
-defineType n t' = do
-    td' <- LLVM.IRBuilder.typedef (reifyName n) (Just t')
-    bindType n td'
+defineType n t' = void (LLVM.IRBuilder.typedef (reifyName n) (Just t'))
 
-externFns :: [(Text, LLVM.AST.Name, [LLVM.AST.Type], LLVM.AST.Type)]
-externFns =
+freshSymbolName :: IRBuilder LLVM.AST.Name
+freshSymbolName = do
+    i <- symbolCounter <<%= (+ 1)
+    pure (reifyName (symbolName i))
+
+intrinsicFns :: [(Text, LLVM.AST.Name, [LLVM.AST.Type], LLVM.AST.Type)]
+intrinsicFns =
     [ ("cos", "llvm.cos.f64", [LLVM.AST.Type.double], LLVM.AST.Type.double)
     , ("sin", "llvm.sin.f64", [LLVM.AST.Type.double], LLVM.AST.Type.double)
     , ("sqrt", "llvm.sqrt.f64", [LLVM.AST.Type.double], LLVM.AST.Type.double)
     ]
 
--- Variadic extern functions can't be called from user code, so they are
--- hidden behind a prefix.
-variadicFnName :: Text -> Text
-variadicFnName = ("variadic." <>)
+printfArgumentTypes :: [LLVM.AST.Type]
+printfArgumentTypes = [LLVM.AST.Type.ptr LLVM.AST.Type.i8]
 
-variadicExternFns :: [(Text, [LLVM.AST.Type], LLVM.AST.Type)]
-variadicExternFns =
-    [("printf", [LLVM.AST.Type.ptr LLVM.AST.Type.i8], LLVM.AST.Type.i32)]
+printfReturnType :: LLVM.AST.Type
+printfReturnType = LLVM.AST.Type.i32
+
+printf :: LLVM.AST.Operand
+printf =
+    LLVM.AST.ConstantOperand
+        (LLVM.AST.Constant.GlobalReference printfFunctionType "printf")
+  where
+    printfFunctionType =
+        LLVM.AST.Type.ptr
+            (LLVM.AST.FunctionType printfReturnType printfArgumentTypes True)
+
+index :: Integer -> LLVM.AST.Operand
+index = LLVM.IRBuilder.int32
 
 tagType :: LLVM.AST.Type
 tagType = LLVM.AST.Type.i64
@@ -160,7 +173,7 @@ alignedTo x a = (x + a - 1) `div` a * a
 codegen :: Module 'Checked -> ModuleBuilder ()
 -- Here and elsewhere the @-XRecursiveDo@ extension allows me to use forward
 -- references without too much trouble.
-codegen (CheckedModule typeDefs mainFnDef otherFnDefs) = mdo
+codegen (CheckedModule typeDefs (FnDef _ mainBlock) otherFnDefs) = mdo
     -- Define the unit type.
     defineType "unit" (LLVM.AST.StructureType False mempty)
 
@@ -195,37 +208,57 @@ codegen (CheckedModule typeDefs mainFnDef otherFnDefs) = mdo
 
                 defineType vn vt'))
 
-    -- Declare non-variadic extern functions.
-    for_ externFns (\(n, n', ats', t') -> do
+    -- Declare intrinsic functions.
+    for_ intrinsicFns (\(n, n', ats', t') -> do
         reference <- LLVM.IRBuilder.extern n' ats' t'
-        bindValue n reference)
+        bindFn n reference)
 
-    -- Declare variadic extern functions.
-    for_ variadicExternFns (\(n, ats', t') -> do
-        reference <- LLVM.IRBuilder.externVarArgs (reifyName n) ats' t'
-        bindValue (variadicFnName n) reference)
+    -- Declare @printf@.
+    void
+        (LLVM.IRBuilder.externVarArgs
+            "printf"
+            printfArgumentTypes
+            printfReturnType)
 
-    let fnDefs = mainFnDef : otherFnDefs
-
-    -- Add all functions to the 'Context'.
-    zipWithM_ (\fd fn -> bindValue (fnDefName fd) fn) fnDefs fns
+    -- Add non-main functions to the 'Context'.
+    zipWithM_ (\fd fn -> bindFn (fnDefName fd) fn) otherFnDefs otherFns
 
     -- Define non-main functions with private linkage in order to unlock
     -- further optimizations.
     let privateLinkage = LLVM.AST.functionDefaults
             {LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private}
 
-    otherFns <- traverse (fnDef privateLinkage) otherFnDefs
+    otherFns <- for otherFnDefs (\(FnDef (FnDecl n as t) b) -> do
+        let n' = reifyName (fnName n)
+
+        let ats' = [reifyType at | FnArg _ at <- toList as]
+
+        let t' = reifyType t
+
+        let body operands = do
+                LLVM.IRBuilder.emitBlockStart "entry"
+                namespaced (do
+                    zipWithM_ bindValue [an | FnArg an _ <- toList as] operands
+                    tailBlock b)
+
+        LLVM.IRBuilder.functionWith privateLinkage n' ats' t' body)
 
     -- Define main.
-    let externalLinkage = LLVM.AST.functionDefaults
-            {LLVM.AST.Global.linkage = LLVM.AST.Linkage.External}
+    let mainArgumentTypes = mempty
 
-    mainFn <- fnDef externalLinkage mainFnDef
+    let mainReturnType = reifyType Unit
 
-    let fns = mainFn : otherFns
+    let mainBody _ = do
+            LLVM.IRBuilder.emitBlockStart "entry"
+            namespaced (tailBlock mainBlock)
 
-    pure ()
+    void
+        (LLVM.IRBuilder.functionWith
+            LLVM.AST.functionDefaults
+            "main"
+            mainArgumentTypes
+            mainReturnType
+            mainBody)
   where
     structFields = Map.fromList [(n, ts) | StructDef n ts <- typeDefs]
 
@@ -250,34 +283,12 @@ codegen (CheckedModule typeDefs mainFnDef otherFnDefs) = mdo
 
     size = (sizeMemo Map.!)
 
-fnDef
-    :: LLVM.AST.Global
-    -- ^ Partially defined 'LLVM.AST.Function' that holds the function defaults;
-    -- see 'LLVM.AST.functionDefaults'.
-    -> FnDef 'Checked
-    -- ^ The function to define.
-    -> ModuleBuilder LLVM.AST.Operand
-fnDef functionDefaults' (FnDef (FnDecl n as t) b) =
-    LLVM.IRBuilder.functionWith functionDefaults' n' ats' t' body
-  where
-    n' = reifyName n
-
-    ats' = [reifyType at | FnArg _ at <- toList as]
-
-    t' = reifyType t
-
-    body operands = do
-        LLVM.IRBuilder.emitBlockStart "entry"
-        namespaced (do
-            zipWithM_ bindValue [an | FnArg an _ <- toList as] operands
-            tailBlock b)
-
 constructStruct
     :: Text
     -> Vector (ExprWithoutBlock 'Checked)
     -> IRBuilder LLVM.AST.Operand
 constructStruct n es = do
-    t <- findType (structName n)
+    let t = reifyStruct n
     p <- LLVM.IRBuilder.alloca t Nothing 0
     Vector.iforM_ es (\i e -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral i)]
@@ -291,9 +302,9 @@ constructEnumVariant
     -> Vector (ExprWithoutBlock 'Checked)
     -> IRBuilder LLVM.AST.Operand
 constructEnumVariant n i es = do
-    t0 <- findType (enumName n Nothing)
+    let t0 = reifyEnum n Nothing
     p0 <- LLVM.IRBuilder.alloca t0 Nothing 0
-    t <- findType (enumName n (Just i))
+    let t = reifyEnum n (Just i)
     p <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr t)
     tagPointer <- LLVM.IRBuilder.gep p [index 0, index 0]
     LLVM.IRBuilder.store tagPointer 0 (LLVM.AST.ConstantOperand (tagLit i))
@@ -320,7 +331,7 @@ destructureEnumVariant
     -- ^ Pointer to the value.
     -> IRBuilder ()
 destructureEnumVariant n i xs p0 = do
-    t <- findType (enumName n (Just i))
+    let t = reifyEnum n (Just i)
     p <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr t)
     Vector.iforM_ xs (\k x -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral k + 1)]
@@ -371,7 +382,7 @@ exprWithBlock = \case
         LLVM.IRBuilder.phi [thenOut, elseOut]
     CheckedMatchExpr e0 n as -> mdo
         a0 <- exprWithoutBlock e0
-        t0 <- findType (enumName n Nothing)
+        let t0 = reifyEnum n Nothing
         p0 <- LLVM.IRBuilder.alloca t0 Nothing 0
         LLVM.IRBuilder.store p0 0 a0
         tagValue <- LLVM.IRBuilder.extractValue a0 [0]
@@ -459,12 +470,11 @@ exprWithoutBlock = \case
     StructExpr n es -> constructStruct n es
     EnumExpr n (EnumVariantIndex i) es -> constructEnumVariant n i es
     PrintLnExpr (CheckedFormatString f) es -> do
-        fn <- findValue (variadicFnName "printf")
-        symbolName <- freshSymbolName
-        symbol <- LLVM.IRBuilder.globalStringPtr (Text.unpack f) symbolName
-        let a0 = LLVM.AST.ConstantOperand symbol
+        n <- freshSymbolName
+        s <- LLVM.IRBuilder.globalStringPtr (Text.unpack f) n
+        let a0 = LLVM.AST.ConstantOperand s
         as <- traverse exprWithoutBlock es
-        void (LLVM.IRBuilder.call fn [(a, mempty) | a <- a0 : as])
+        void (LLVM.IRBuilder.call printf [(a, mempty) | a <- a0 : as])
         pure unitLit
   where
     unitLit =
@@ -473,7 +483,7 @@ exprWithoutBlock = \case
 
 call :: Call 'Checked -> IRBuilder LLVM.AST.Operand
 call (Call n es) = do
-    fn <- findValue n
+    fn <- findFn n
     as <- traverse exprWithoutBlock es
     LLVM.IRBuilder.call fn [(a, mempty) | a <- toList as]
 
@@ -509,7 +519,7 @@ tailExprWithBlock = \case
         namespaced (tailBlock elseBlock)
     CheckedMatchExpr e0 n as -> mdo
         a0 <- exprWithoutBlock e0
-        t0 <- findType (enumName n Nothing)
+        let t0 = reifyEnum n Nothing
         p0 <- LLVM.IRBuilder.alloca t0 Nothing 0
         LLVM.IRBuilder.store p0 0 a0
         tagValue <- LLVM.IRBuilder.extractValue a0 [0]
