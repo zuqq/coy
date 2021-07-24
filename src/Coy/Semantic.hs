@@ -186,7 +186,7 @@ data SemanticErrorMessage
     | StructExprTypeMismatch
     -- ^ The given argument list doesn't conform to the constructor's signature.
         Text
-        -- ^ Names of the struct.
+        -- ^ Name of the struct.
         (Vector (ExprWithoutBlock 'Unchecked))
         -- ^ Arguments.
         (Vector (Type 'Checked))
