@@ -349,7 +349,7 @@ statement = \case
         a <- expr e
         case p of
             VarPattern x -> bindValue x a
-            StructPattern _ xs -> destructureStruct xs a
+            CheckedStructPattern xts -> destructureStruct (fmap fst xts) a
     ExprStatement e -> void (expr e)
 
 expr :: Expr 'Checked -> IRBuilder LLVM.AST.Operand
@@ -389,10 +389,10 @@ exprWithBlock = \case
         let outgoing = [(tagLit i, inLabel) | ((i, inLabel), _) <- branches]
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
 
-        branches <- ifor as (\i (CheckedMatchArm xs e) -> do
+        branches <- ifor as (\i (CheckedMatchArm xts e) -> do
             inLabel <- LLVM.IRBuilder.block
             result <- namespaced (do
-                destructureEnumVariant n i xs p0
+                destructureEnumVariant n i (fmap fst xts) p0
                 expr e)
             outLabel <- LLVM.IRBuilder.currentBlock
             LLVM.IRBuilder.br joinLabel
@@ -414,7 +414,7 @@ exprWithoutBlock = \case
             BoolLit b -> LLVM.IRBuilder.bit (if b then 1 else 0)
             I64Lit x -> LLVM.IRBuilder.int64 x
             F64Lit x -> LLVM.IRBuilder.double x)
-    VarExpr x -> findValue x
+    CheckedVarExpr x _ -> findValue x
     UnaryOpExpr o e -> do
         a <- exprWithoutBlock e
         let instruction =
@@ -466,9 +466,12 @@ exprWithoutBlock = \case
                     And -> LLVM.IRBuilder.and
                     Or -> LLVM.IRBuilder.or
         instruction a0 a1
-    CallExpr c -> call c
-    StructExpr n es -> constructStruct n es
-    EnumExpr n (EnumVariantIndex i) es -> constructEnumVariant n i es
+    CheckedCallExpr n es _ -> do
+        fn <- findFn n
+        as <- traverse exprWithoutBlock es
+        LLVM.IRBuilder.call fn [(a, mempty) | a <- toList as]
+    CheckedStructExpr n ets -> constructStruct n (fmap fst ets)
+    CheckedEnumExpr n i ets -> constructEnumVariant n i (fmap fst ets)
     PrintLnExpr (CheckedFormatString f) es -> do
         n <- freshSymbolName
         s <- LLVM.IRBuilder.globalStringPtr (Text.unpack f) n
@@ -480,12 +483,6 @@ exprWithoutBlock = \case
     unitLit =
         LLVM.AST.ConstantOperand
             (LLVM.AST.Constant.Struct (Just "unit") False mempty)
-
-call :: Call 'Checked -> IRBuilder LLVM.AST.Operand
-call (Call n es) = do
-    fn <- findFn n
-    as <- traverse exprWithoutBlock es
-    LLVM.IRBuilder.call fn [(a, mempty) | a <- toList as]
 
 -- Entry point for blocks in tail position.
 tailBlock :: Block 'Checked -> IRBuilder ()
@@ -525,10 +522,10 @@ tailExprWithBlock = \case
         tagValue <- LLVM.IRBuilder.extractValue a0 [0]
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
 
-        outgoing <- ifor as (\i (CheckedMatchArm xs e) -> do
+        outgoing <- ifor as (\i (CheckedMatchArm xts e) -> do
             label <- LLVM.IRBuilder.block
             namespaced (do
-                destructureEnumVariant n i xs p0
+                destructureEnumVariant n i (fmap fst xts) p0
                 tailExpr e)
             pure (tagLit i, label))
 

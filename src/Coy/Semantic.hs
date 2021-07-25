@@ -195,7 +195,7 @@ data SemanticErrorMessage
     -- ^ The given argument list doesn't conform to the constructor's signature.
         Text
         -- ^ Name of the enum.
-        (EnumVariantAccessor 'Unchecked)
+        Text
         -- ^ Name of the enum variant.
         (Vector (ExprWithoutBlock 'Unchecked))
         -- ^ Arguments.
@@ -404,7 +404,7 @@ statement = \case
         (e', t) <- expr e
         bindValue x t
         pure (LetStatement (VarPattern x) e')
-    LetStatement (StructPattern n xs) e -> do
+    LetStatement (UncheckedStructPattern n xs) e -> do
         fieldTypes <- findStruct n
         when
             (Vector.length xs /= Vector.length fieldTypes)
@@ -413,8 +413,9 @@ statement = \case
         when
             (Struct n /= t)
             (throwSemanticError (StructPatternTypeMismatch n e t))
-        Vector.zipWithM_ bindValue xs fieldTypes
-        pure (LetStatement (StructPattern n xs) e')
+        let xts = Vector.zip xs fieldTypes
+        traverse_ (uncurry bindValue) xts
+        pure (LetStatement (CheckedStructPattern xts) e')
     ExprStatement e -> do
         (e', _) <- expr e
         pure (ExprStatement e')
@@ -460,9 +461,10 @@ exprWithBlock = \case
                     (i, fieldTypes) <- findEnumVariant n v
                     if Vector.length xs == Vector.length fieldTypes then
                         namespaced (do
-                            Vector.zipWithM_ bindValue xs fieldTypes
+                            let xts = Vector.zip xs fieldTypes
+                            traverse_ (uncurry bindValue) xts
                             (e', resultType) <- expr e
-                            pure (i, CheckedMatchArm xs e', resultType))
+                            pure (i, CheckedMatchArm xts e', resultType))
                     else
                         throwSemanticError (MatchArmArityMismatch n v xs))
 
@@ -490,9 +492,9 @@ exprWithoutBlock = \case
             BoolLit b -> pure (LitExpr (BoolLit b), Bool)
             I64Lit x -> pure (LitExpr (I64Lit x), I64)
             F64Lit f -> pure (LitExpr (F64Lit f), F64)
-    VarExpr x -> do
+    UncheckedVarExpr x -> do
         t <- findValue x
-        pure (VarExpr x, t)
+        pure (CheckedVarExpr x t, t)
     UnaryOpExpr o e -> do
         (e', t) <- exprWithoutBlock e
         case (o, t) of
@@ -526,30 +528,30 @@ exprWithoutBlock = \case
             (And, Bool, Bool) -> pure (BinaryOpExpr And e0' e1', Bool)
             (Or, Bool, Bool) -> pure (BinaryOpExpr Or e0' e1', Bool)
             _ -> throwSemanticError (BinaryOpTypeMismatch o e0 t0 e1 t1)
-    CallExpr (Call n es) -> do
+    UncheckedCallExpr n es -> do
         ets' <- traverse exprWithoutBlock es
         let ts = fmap snd ets'
         (argumentTypes, returnType) <- findFn n
         if ts == argumentTypes then
-            pure (CallExpr (Call n (fmap fst ets')), returnType)
+            pure (CheckedCallExpr n (fmap fst ets') returnType, returnType)
         else
             throwSemanticError (CallExprTypeMismatch n es ts)
-    StructExpr n es -> do
+    UncheckedStructExpr n es -> do
         ets' <- traverse exprWithoutBlock es
         let ts = fmap snd ets'
         fieldTypes <- findStruct n
         if ts == fieldTypes then
-            pure (StructExpr n (fmap fst ets'), Struct n)
+            pure (CheckedStructExpr n ets', Struct n)
         else
             throwSemanticError (StructExprTypeMismatch n es ts)
-    EnumExpr n a@(EnumVariantName v) es -> do
+    UncheckedEnumExpr n v es -> do
         ets' <- traverse exprWithoutBlock es
         let ts = fmap snd ets'
         (i, fieldTypes) <- findEnumVariant n v
         if ts == fieldTypes then
-            pure (EnumExpr n (EnumVariantIndex i) (fmap fst ets'), Enum n)
+            pure (CheckedEnumExpr n i ets', Enum n)
         else
-            throwSemanticError (EnumExprTypeMismatch n a es ts)
+            throwSemanticError (EnumExprTypeMismatch n v es ts)
     PrintLnExpr f@(UncheckedFormatString cs) es -> do
         ets' <- traverse exprWithoutBlock es
 

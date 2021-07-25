@@ -117,7 +117,7 @@ pattern = varPattern <|> structPattern
     structPattern = do
         n <- structName
         vs <- parenthesized (commaSeparated valueName)
-        pure (StructPattern n (Vector.fromList vs))
+        pure (UncheckedStructPattern n (Vector.fromList vs))
 
 expr :: Parser (Expr 'Unchecked)
 expr =
@@ -203,23 +203,23 @@ exprWithoutBlock = buildExpressionParser operators simpleExpr
     litExpr = fmap LitExpr lit
 
     callExpr = do
-        x <- valueName
+        n <- valueName
         es <- parenthesized (commaSeparated exprWithoutBlock)
-        pure (CallExpr (Call x (Vector.fromList es)))
+        pure (UncheckedCallExpr n (Vector.fromList es))
 
-    varExpr = fmap VarExpr valueName
+    varExpr = fmap UncheckedVarExpr valueName
 
     enumExpr = do
         n <- enumName
         void "::"
         v <- enumVariantName
         es <- parenthesized (commaSeparated exprWithoutBlock)
-        pure (EnumExpr n (EnumVariantName v) (Vector.fromList es))
+        pure (UncheckedEnumExpr n v (Vector.fromList es))
 
     structExpr = do
         n <- structName
         es <- parenthesized (commaSeparated exprWithoutBlock)
-        pure (StructExpr n (Vector.fromList es))
+        pure (UncheckedStructExpr n (Vector.fromList es))
 
     printLnExpr = do
         void "println"

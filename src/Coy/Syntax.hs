@@ -80,8 +80,14 @@ data Statement (u :: Status)
     | ExprStatement (Expr u)
     deriving Show
 
-data Pattern (u :: Status) = VarPattern Text | StructPattern Text (Vector Text)
-    deriving Show
+data Pattern (u :: Status) where
+    VarPattern :: Text -> Pattern u
+
+    UncheckedStructPattern :: Text -> Vector Text -> Pattern 'Unchecked
+
+    CheckedStructPattern :: Vector (Text, Type 'Checked) -> Pattern 'Checked
+
+deriving instance Show (Pattern u)
 
 data Expr (u :: Status)
     = ExprWithBlock (ExprWithBlock u)
@@ -123,24 +129,93 @@ data MatchArm (u :: Status) where
         -> MatchArm 'Unchecked
 
     CheckedMatchArm
-        :: Vector Text
-        -- ^ Names for the components.
+        :: Vector (Text, Type 'Checked)
+        -- ^ Names for the components with their types.
         -> Expr 'Checked
         -- ^ Right-hand side of the match arm.
         -> MatchArm 'Checked
 
 deriving instance Show (MatchArm u)
 
-data ExprWithoutBlock (u :: Status)
-    = LitExpr Lit
-    | VarExpr Text
-    | UnaryOpExpr (UnaryOp u) (ExprWithoutBlock u)
-    | BinaryOpExpr (BinaryOp u) (ExprWithoutBlock u) (ExprWithoutBlock u)
-    | CallExpr (Call u)
-    | StructExpr Text (Vector (ExprWithoutBlock u))
-    | EnumExpr Text (EnumVariantAccessor u) (Vector (ExprWithoutBlock u))
-    | PrintLnExpr (FormatString u) [ExprWithoutBlock u]
-    deriving Show
+data ExprWithoutBlock (u :: Status) where
+    LitExpr :: Lit -> ExprWithoutBlock u
+
+    UncheckedVarExpr :: Text -> ExprWithoutBlock 'Unchecked
+
+    CheckedVarExpr :: Text -> Type 'Checked -> ExprWithoutBlock 'Checked
+
+    UnaryOpExpr
+        :: UnaryOp u
+        -- ^ The unary operator.
+        -> ExprWithoutBlock u
+        -- ^ Argument.
+        -> ExprWithoutBlock u
+
+    BinaryOpExpr
+        :: BinaryOp u
+        -- ^ The binary operator.
+        -> ExprWithoutBlock u
+        -- ^ First argument.
+        -> ExprWithoutBlock u
+        -- ^ Second argument.
+        -> ExprWithoutBlock u
+
+    UncheckedCallExpr
+        :: Text
+        -- ^ Name of the function.
+        -> Vector (ExprWithoutBlock 'Unchecked)
+        -- ^ Arguments.
+        -> ExprWithoutBlock 'Unchecked
+
+    CheckedCallExpr
+        :: Text
+        -- ^ Name of the function.
+        -> Vector (ExprWithoutBlock 'Checked)
+        -- ^ Arguments.
+        -> Type 'Checked
+        -- ^ Return type.
+        -> ExprWithoutBlock 'Checked
+
+    UncheckedStructExpr
+        :: Text
+        -- ^ Name of the struct.
+        -> Vector (ExprWithoutBlock 'Unchecked)
+        -- ^ Arguments.
+        -> ExprWithoutBlock 'Unchecked
+
+    CheckedStructExpr
+        :: Text
+        -- ^ Name of the struct.
+        -> Vector (ExprWithoutBlock 'Checked, Type 'Checked)
+        -- ^ Arguments with their types.
+        -> ExprWithoutBlock 'Checked
+
+    UncheckedEnumExpr
+        :: Text
+        -- ^ Name of the enum.
+        -> Text
+        -- ^ Name of the enum variant.
+        -> Vector (ExprWithoutBlock 'Unchecked)
+        -- ^ Arguments.
+        -> ExprWithoutBlock 'Unchecked
+
+    CheckedEnumExpr
+        :: Text
+        -- ^ Name of the enum.
+        -> Int
+        -- ^ Index of the enum variant.
+        -> Vector (ExprWithoutBlock 'Checked, Type 'Checked)
+        -- ^ Arguments with their types.
+        -> ExprWithoutBlock 'Checked
+
+    PrintLnExpr
+        :: FormatString u
+        -- ^ The format string.
+        -> [ExprWithoutBlock u]
+        -- ^ Arguments.
+        -> ExprWithoutBlock u
+
+deriving instance Show (ExprWithoutBlock u)
 
 data Lit
     = UnitLit ()
@@ -203,16 +278,6 @@ data Predicate
     | Le
     | Ge
     deriving Show
-
-data Call (u :: Status) = Call Text (Vector (ExprWithoutBlock u))
-    deriving Show
-
-data EnumVariantAccessor (u :: Status) where
-    EnumVariantName :: Text -> EnumVariantAccessor 'Unchecked
-
-    EnumVariantIndex :: Int -> EnumVariantAccessor 'Checked
-
-deriving instance Show (EnumVariantAccessor u)
 
 data FormatString (u :: Status) where
     UncheckedFormatString :: [Text] -> FormatString 'Unchecked
