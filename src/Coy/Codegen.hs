@@ -13,7 +13,6 @@ import Data.Foldable (foldl', for_, toList, traverse_)
 import Data.List.Index (ifor, ifor_)
 import Data.Map (Map)
 import Data.Text (Text)
-import Data.Traversable (for)
 import Data.Vector (Vector)
 import Lens.Micro (Lens', lens)
 import Lens.Micro.Mtl ((%=), (.=), (<<%=), use)
@@ -114,13 +113,42 @@ reifyType = \case
     Struct n -> reifyStruct n
     Enum n -> reifyEnum n Nothing
 
-defineType :: Text -> LLVM.AST.Type -> ModuleBuilder ()
-defineType n t' = void (LLVM.IRBuilder.typedef (reifyName n) (Just t'))
+-- Whether or not values of this type are operated on through pointers.
+hasPointerOperandType :: Type 'Checked -> Bool
+hasPointerOperandType = \case
+    Unit -> False
+    Bool -> False
+    I64 -> False
+    F64 -> False
+    Struct _ -> True
+    Enum _ -> True
+
+operandType :: Type 'Checked -> LLVM.AST.Type
+operandType t
+    | hasPointerOperandType t = LLVM.AST.Type.ptr (reifyType t)
+    | otherwise = reifyType t
 
 freshSymbolName :: IRBuilder LLVM.AST.Name
 freshSymbolName = do
     i <- symbolCounter <<%= (+ 1)
     pure (reifyName (symbolName i))
+
+globalReference
+    :: LLVM.AST.Type
+    -- ^ Type of the global variable.
+    -> LLVM.AST.Name
+    -- ^ Name of the global variable.
+    -> LLVM.AST.Operand
+globalReference t' =
+    LLVM.AST.ConstantOperand . LLVM.AST.Constant.GlobalReference t'
+
+localReference
+    :: LLVM.AST.Type
+    -- ^ Type of the local variable.
+    -> Word
+    -- ^ Number of the local variable.
+    -> LLVM.AST.Operand
+localReference t' = LLVM.AST.LocalReference t' . LLVM.AST.UnName
 
 intrinsicFns :: [(Text, LLVM.AST.Name, [LLVM.AST.Type], LLVM.AST.Type)]
 intrinsicFns =
@@ -129,20 +157,42 @@ intrinsicFns =
     , ("sqrt", "llvm.sqrt.f64", [LLVM.AST.Type.double], LLVM.AST.Type.double)
     ]
 
-printfArgumentTypes :: [LLVM.AST.Type]
-printfArgumentTypes = [LLVM.AST.Type.ptr LLVM.AST.Type.i8]
+memcpyName :: LLVM.AST.Name
+memcpyName = "llvm.memcpy.p0i8.p0i8.i32"
+
+memcpyArgTypes :: [LLVM.AST.Type]
+memcpyArgTypes =
+    [ LLVM.AST.Type.ptr LLVM.AST.Type.i8
+    , LLVM.AST.Type.ptr LLVM.AST.Type.i8
+    , LLVM.AST.Type.i32
+    , LLVM.AST.Type.i1
+    ]
+
+memcpyReturnType :: LLVM.AST.Type
+memcpyReturnType = LLVM.AST.Type.void
+
+memcpy :: LLVM.AST.Operand
+memcpy = globalReference memcpyFnType memcpyName
+  where
+    memcpyFnType =
+        LLVM.AST.Type.ptr
+            (LLVM.AST.FunctionType memcpyReturnType memcpyArgTypes False)
+
+printfName :: LLVM.AST.Name
+printfName = "printf"
+
+printfArgTypes :: [LLVM.AST.Type]
+printfArgTypes = [LLVM.AST.Type.ptr LLVM.AST.Type.i8]
 
 printfReturnType :: LLVM.AST.Type
 printfReturnType = LLVM.AST.Type.i32
 
 printf :: LLVM.AST.Operand
-printf =
-    LLVM.AST.ConstantOperand
-        (LLVM.AST.Constant.GlobalReference printfFunctionType "printf")
+printf = globalReference printfFnType printfName
   where
-    printfFunctionType =
+    printfFnType =
         LLVM.AST.Type.ptr
-            (LLVM.AST.FunctionType printfReturnType printfArgumentTypes True)
+            (LLVM.AST.FunctionType printfReturnType printfArgTypes True)
 
 index :: Integer -> LLVM.AST.Operand
 index = LLVM.IRBuilder.int32
@@ -170,81 +220,58 @@ alignment = \case
 alignedTo :: Int -> Int -> Int
 alignedTo x a = (x + a - 1) `div` a * a
 
+computeEnumSizes :: [TypeDef 'Checked] -> Map Text Int
+computeEnumSizes typeDefs = enumSizes
+  where
+    structSizes = Map.fromList [(n, structSize ts) | StructDef n ts <- typeDefs]
+
+    enumSizes = Map.fromList [(n, enumSize vs) | EnumDef n vs <- typeDefs]
+
+    structSize = totalSize 0
+
+    enumSize vs = maximum [enumVariantSize ts | EnumVariant _ ts <- vs]
+
+    enumVariantSize = totalSize tagSize
+
+    totalSize = foldl' (\x t -> x `alignedTo` alignment t + fieldSize t)
+
+    fieldSize = \case
+        Unit -> 0
+        Bool -> 1
+        I64 -> 8
+        F64 -> 8
+        Struct n -> structSizes Map.! n
+        Enum n -> enumSizes Map.! n
+
 codegen :: Module 'Checked -> ModuleBuilder ()
 -- Here and elsewhere the @-XRecursiveDo@ extension allows me to use forward
 -- references without too much trouble.
 codegen (CheckedModule typeDefs (FnDef _ mainBlock) otherFnDefs) = mdo
     -- Define the unit type.
-    defineType "unit" (LLVM.AST.StructureType False mempty)
+    void (defineType "unit" (LLVM.AST.StructureType False mempty))
 
     for_ typeDefs (\case
-        StructDef n0 ts -> do
-            let n = structName n0
-
-            let t' = LLVM.AST.StructureType False (fmap reifyType (toList ts))
-
-            defineType n t'
-        EnumDef n0 vs -> do
-            -- Define the base type.
-            let n = enumName n0 Nothing
-
-            let placeholder =
-                    LLVM.AST.ArrayType
-                        (fromIntegral (size (Enum n0) - tagSize))
-                        LLVM.AST.Type.i8
-
-            let t' = LLVM.AST.StructureType False [tagType, placeholder]
-
-            defineType n t'
-
-            -- Recurse into the variants.
-            ifor_ vs (\i (EnumVariant _ ts) -> do
-                let vn = enumName n0 (Just i)
-
-                let vt' =
-                        LLVM.AST.StructureType
-                            False
-                            (tagType : fmap reifyType (toList ts))
-
-                defineType vn vt'))
+        StructDef n0 ts -> structDef n0 ts
+        EnumDef n0 vs -> enumDef n0 vs)
 
     -- Declare intrinsic functions.
     for_ intrinsicFns (\(n, n', ats', t') -> do
         reference <- LLVM.IRBuilder.extern n' ats' t'
         bindFn n reference)
 
+    -- Declare @memcpy@.
+    void (LLVM.IRBuilder.extern memcpyName memcpyArgTypes memcpyReturnType)
+
     -- Declare @printf@.
-    void
-        (LLVM.IRBuilder.externVarArgs
-            "printf"
-            printfArgumentTypes
-            printfReturnType)
+    void (LLVM.IRBuilder.externVarArgs printfName printfArgTypes printfReturnType)
 
     -- Add non-main functions to the 'Context'.
     zipWithM_ (\fd fn -> bindFn (fnDefName fd) fn) otherFnDefs otherFns
 
-    -- Define non-main functions with private linkage in order to unlock
-    -- further optimizations.
-    let privateLinkage = LLVM.AST.functionDefaults
-            {LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private}
+    otherFns <- traverse fnDef otherFnDefs
 
-    otherFns <- for otherFnDefs (\(FnDef (FnDecl n as t) b) -> do
-        let n' = reifyName (fnName n)
-
-        let ats' = [reifyType at | FnArg _ at <- toList as]
-
-        let t' = reifyType t
-
-        let body operands = do
-                LLVM.IRBuilder.emitBlockStart "entry"
-                namespaced (do
-                    zipWithM_ bindValue [an | FnArg an _ <- toList as] operands
-                    tailBlock b)
-
-        LLVM.IRBuilder.functionWith privateLinkage n' ats' t' body)
-
-    -- Define main.
-    let mainArgumentTypes = mempty
+    -- Define the main function.
+    let mainArgs = mempty
 
     let mainReturnType = reifyType Unit
 
@@ -252,91 +279,185 @@ codegen (CheckedModule typeDefs (FnDef _ mainBlock) otherFnDefs) = mdo
             LLVM.IRBuilder.emitBlockStart "entry"
             namespaced (tailBlock mainBlock)
 
-    void
-        (LLVM.IRBuilder.functionWith
-            LLVM.AST.functionDefaults
-            "main"
-            mainArgumentTypes
-            mainReturnType
-            mainBody)
+    void (LLVM.IRBuilder.function "main" mainArgs mainReturnType mainBody)
   where
-    structFields = Map.fromList [(n, ts) | StructDef n ts <- typeDefs]
+    defineType n t' = LLVM.IRBuilder.typedef (reifyName n) (Just t')
 
-    enumVariants =
-        Map.fromList
-            [(n, [ts | EnumVariant _ ts <- vs]) | EnumDef n vs <- typeDefs]
+    structDef n0 ts = do
+        let n = structName n0
 
-    -- This definition uses the lazy @Map@ type in order to avoid writing down
-    -- the imperative way of computing the values.
-    sizeMemo = Map.fromList (
-            [(Unit, 0), (Bool, 1), (I64, 8), (F64, 8)]
-        <>  [(t, sizeRec t) | StructDef n _ <- typeDefs, let t = Struct n]
-        <>  [(t, sizeRec t) | EnumDef n _ <- typeDefs, let t = Enum n])
+        let t' = LLVM.AST.StructureType False (fmap reifyType (toList ts))
 
-    sizeRec = \case
-        Struct n -> totalSize 0 (structFields Map.! n)
-        Enum n -> maximum [totalSize tagSize ts | ts <- enumVariants Map.! n]
-        t -> sizeMemo Map.! t
-      where
-        totalSize =
-            foldl' (\x t -> x `alignedTo` alignment t + sizeMemo Map.! t)
+        void (defineType n t')
 
-    size = (sizeMemo Map.!)
+    enumSizes = computeEnumSizes typeDefs
+
+    enumDef n0 vs = do
+        -- Define the base type.
+        let n = enumName n0 Nothing
+
+        let k = fromIntegral (enumSizes Map.! n0 - tagSize)
+
+        let placeholder = LLVM.AST.ArrayType k LLVM.AST.Type.i8
+
+        let t' = LLVM.AST.StructureType False [tagType, placeholder]
+
+        void (defineType n t')
+
+        -- Recurse into the variants.
+        ifor_ vs (\i (EnumVariant _ ts) -> do
+            let vn = enumName n0 (Just i)
+
+            let ts' = fmap reifyType (toList ts)
+
+            let vt' = LLVM.AST.StructureType False (tagType : ts')
+
+            defineType vn vt')
+
+fnDef :: FnDef 'Checked -> ModuleBuilder LLVM.AST.Operand
+fnDef (FnDef (FnDecl n as t) b) = do
+    let n' = reifyName (fnName n)
+
+    let defineFn = LLVM.IRBuilder.functionWith privateLinkage n'
+
+    let ats' = [operandType at | FnArg _ at <- toList as]
+
+    let ans = [an | FnArg an _ <- toList as]
+
+    if hasPointerOperandType t then do
+        let returnArgType = operandType t
+
+        let body operands = do
+                LLVM.IRBuilder.emitBlockStart "entry"
+                namespaced (do
+                    zipWithM_ bindValue ans (tail operands)
+                    tailBlock b)
+
+        defineFn (returnArgType : ats') LLVM.AST.Type.void body
+    else do
+        let t' = reifyType t
+
+        let body operands = do
+                LLVM.IRBuilder.emitBlockStart "entry"
+                namespaced (do
+                    zipWithM_ bindValue ans operands
+                    tailBlock b)
+
+        defineFn ats' t' body
+  where
+    -- Define non-main functions with private linkage in order to unlock
+    -- further optimizations.
+    privateLinkage = LLVM.AST.functionDefaults
+            {LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private}
+
+copyTo
+    :: LLVM.AST.Operand
+    -- ^ Destination pointer.
+    -> LLVM.AST.Operand
+    -- ^ Source pointer.
+    -> LLVM.AST.Type
+    -- ^ Referent type.
+    -> IRBuilder ()
+copyTo dest0 src0 t' = do
+    dest <- castToVoidPointer dest0
+
+    src <- castToVoidPointer src0
+
+    let len = LLVM.AST.ConstantOperand (LLVM.AST.Constant.sizeof t')
+
+    let isvolatile = LLVM.IRBuilder.bit 0
+
+    let as' =
+            [(dest, mempty), (src, mempty), (len, mempty), (isvolatile, mempty)]
+
+    void (LLVM.IRBuilder.call memcpy as')
+  where
+    castToVoidPointer p =
+        LLVM.IRBuilder.bitcast p (LLVM.AST.Type.ptr LLVM.AST.Type.i8)
+
+copyToReturnArg
+    :: LLVM.AST.Operand
+    -- ^ Source pointer.
+    -> LLVM.AST.Type
+    -- ^ Referent type.
+    -> IRBuilder ()
+copyToReturnArg src0 t' = copyTo returnArg src0 t'
+  where
+    returnArg = localReference (LLVM.AST.Type.ptr t') 0
 
 constructStruct
     :: Text
-    -> Vector (ExprWithoutBlock 'Checked)
+    -- ^ Name of the struct.
+    -> Vector (ExprWithoutBlock 'Checked, Type 'Checked)
+    -- ^ Values for the components with their types.
     -> IRBuilder LLVM.AST.Operand
-constructStruct n es = do
-    let t = reifyStruct n
-    p <- LLVM.IRBuilder.alloca t Nothing 0
-    Vector.iforM_ es (\i e -> do
+constructStruct n ets = do
+    p <- LLVM.IRBuilder.alloca (reifyStruct n) Nothing 0
+    Vector.iforM_ ets (\i (e, at) -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral i)]
         a <- exprWithoutBlock e
-        LLVM.IRBuilder.store q 0 a)
-    LLVM.IRBuilder.load p 0
+        if hasPointerOperandType at then do
+            copyTo q a (reifyType at)
+        else
+            LLVM.IRBuilder.store q 0 a)
+    pure p
 
 constructEnumVariant
     :: Text
+    -- ^ Name of the enum.
     -> Int
-    -> Vector (ExprWithoutBlock 'Checked)
+    -- ^ Index of the enum variant.
+    -> Vector (ExprWithoutBlock 'Checked, Type 'Checked)
+    -- ^ Values for the components with their types.
     -> IRBuilder LLVM.AST.Operand
-constructEnumVariant n i es = do
-    let t0 = reifyEnum n Nothing
-    p0 <- LLVM.IRBuilder.alloca t0 Nothing 0
-    let t = reifyEnum n (Just i)
-    p <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr t)
-    tagPointer <- LLVM.IRBuilder.gep p [index 0, index 0]
+constructEnumVariant n i ets = do
+    p0 <- LLVM.IRBuilder.alloca (reifyEnum n Nothing) Nothing 0
+    tagPointer <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr tagType)
     LLVM.IRBuilder.store tagPointer 0 (LLVM.AST.ConstantOperand (tagLit i))
-    Vector.iforM_ es (\k e -> do
+    p <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr (reifyEnum n (Just i)))
+    Vector.iforM_ ets (\k (e, at) -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral k + 1)]
         a <- exprWithoutBlock e
-        LLVM.IRBuilder.store q 0 a)
-    LLVM.IRBuilder.load p0 0
+        if hasPointerOperandType at then do
+            copyTo q a (reifyType at)
+        else
+            LLVM.IRBuilder.store q 0 a)
+    pure p0
 
-destructureStruct :: Vector Text -> LLVM.AST.Operand -> IRBuilder ()
-destructureStruct xs a =
-    Vector.iforM_ xs (\i x -> do
-        b <- LLVM.IRBuilder.extractValue a [fromIntegral i]
-        bindValue x b)
+destructureStruct
+    :: Vector (Text, Type 'Checked)
+    -- ^ Variables for the components with their types.
+    -> LLVM.AST.Operand
+    -- ^ Pointer to the value.
+    -> IRBuilder ()
+destructureStruct xts p =
+    Vector.iforM_ xts (\k (x, at) -> do
+        q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral k)]
+        if hasPointerOperandType at then
+            bindValue x q
+        else do
+            b <- LLVM.IRBuilder.load q 0
+            bindValue x b)
 
 destructureEnumVariant
     :: Text
     -- ^ Name of the enum.
     -> Int
     -- ^ Index of the enum variant.
-    -> Vector Text
-    -- ^ Variables for the components.
+    -> Vector (Text, Type 'Checked)
+    -- ^ Variables for the components with their types.
     -> LLVM.AST.Operand
     -- ^ Pointer to the value.
     -> IRBuilder ()
-destructureEnumVariant n i xs p0 = do
-    let t = reifyEnum n (Just i)
-    p <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr t)
-    Vector.iforM_ xs (\k x -> do
+destructureEnumVariant n i xts p0 = do
+    p <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr (reifyEnum n (Just i)))
+    Vector.iforM_ xts (\k (x, at) -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral k + 1)]
-        b <- LLVM.IRBuilder.load q 0
-        bindValue x b)
+        if hasPointerOperandType at then
+            bindValue x q
+        else do
+            b <- LLVM.IRBuilder.load q 0
+            bindValue x b)
 
 block :: Block 'Checked -> IRBuilder LLVM.AST.Operand
 block (Block ss e) = do
@@ -349,7 +470,7 @@ statement = \case
         a <- expr e
         case p of
             VarPattern x -> bindValue x a
-            CheckedStructPattern xts -> destructureStruct (fmap fst xts) a
+            CheckedStructPattern xts -> destructureStruct xts a
     ExprStatement e -> void (expr e)
 
 expr :: Expr 'Checked -> IRBuilder LLVM.AST.Operand
@@ -381,18 +502,16 @@ exprWithBlock = \case
         joinLabel <- LLVM.IRBuilder.block
         LLVM.IRBuilder.phi [thenOut, elseOut]
     CheckedMatchExpr e0 n as -> mdo
-        a0 <- exprWithoutBlock e0
-        let t0 = reifyEnum n Nothing
-        p0 <- LLVM.IRBuilder.alloca t0 Nothing 0
-        LLVM.IRBuilder.store p0 0 a0
-        tagValue <- LLVM.IRBuilder.extractValue a0 [0]
+        p0 <- exprWithoutBlock e0
+        tagPointer <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr tagType)
+        tagValue <- LLVM.IRBuilder.load tagPointer 0
         let outgoing = [(tagLit i, inLabel) | ((i, inLabel), _) <- branches]
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
 
         branches <- ifor as (\i (CheckedMatchArm xts e) -> do
             inLabel <- LLVM.IRBuilder.block
             result <- namespaced (do
-                destructureEnumVariant n i (fmap fst xts) p0
+                destructureEnumVariant n i xts p0
                 expr e)
             outLabel <- LLVM.IRBuilder.currentBlock
             LLVM.IRBuilder.br joinLabel
@@ -466,12 +585,18 @@ exprWithoutBlock = \case
                     And -> LLVM.IRBuilder.and
                     Or -> LLVM.IRBuilder.or
         instruction a0 a1
-    CheckedCallExpr n es _ -> do
+    CheckedCallExpr n es returnType -> do
         fn <- findFn n
         as <- traverse exprWithoutBlock es
-        LLVM.IRBuilder.call fn [(a, mempty) | a <- toList as]
-    CheckedStructExpr n ets -> constructStruct n (fmap fst ets)
-    CheckedEnumExpr n i ets -> constructEnumVariant n i (fmap fst ets)
+        let as' = [(a, mempty) | a <- toList as]
+        if hasPointerOperandType returnType then do
+            returnArg <- LLVM.IRBuilder.alloca (reifyType returnType) Nothing 0
+            void (LLVM.IRBuilder.call fn ((returnArg, mempty) : as'))
+            pure returnArg
+        else
+            LLVM.IRBuilder.call fn as'
+    CheckedStructExpr n ets -> constructStruct n ets
+    CheckedEnumExpr n i ets -> constructEnumVariant n i ets
     PrintLnExpr (CheckedFormatString f) es -> do
         n <- freshSymbolName
         s <- LLVM.IRBuilder.globalStringPtr (Text.unpack f) n
@@ -493,15 +618,12 @@ tailBlock (Block ss e) = do
 tailExpr :: Expr 'Checked -> IRBuilder ()
 tailExpr = \case
     ExprWithBlock e -> tailExprWithBlock e
-    -- Expressions without branches need no special treatment.
-    ExprWithoutBlock e -> do
-        result <- exprWithoutBlock e
-        LLVM.IRBuilder.ret result
+    ExprWithoutBlock e -> tailExprWithoutBlock e
 
--- Expressions with multiple branches are more subtle: instead of joining the
--- branches by introducing a phi node and then returning, we return separately
--- in each branch. This has the effect that function calls that are in tail
--- position in the AST are also in tail position in the generated LLVM IR.
+-- Instead of joining the branches by introducing a phi node and then returning,
+-- we return separately in each branch. This has the effect that function calls
+-- that are in tail position in the AST are also in tail position in the
+-- generated LLVM IR.
 tailExprWithBlock :: ExprWithBlock 'Checked -> IRBuilder ()
 tailExprWithBlock = \case
     BlockExpr b -> namespaced (tailBlock b)
@@ -515,19 +637,51 @@ tailExprWithBlock = \case
         elseLabel <- LLVM.IRBuilder.block
         namespaced (tailBlock elseBlock)
     CheckedMatchExpr e0 n as -> mdo
-        a0 <- exprWithoutBlock e0
-        let t0 = reifyEnum n Nothing
-        p0 <- LLVM.IRBuilder.alloca t0 Nothing 0
-        LLVM.IRBuilder.store p0 0 a0
-        tagValue <- LLVM.IRBuilder.extractValue a0 [0]
+        p0 <- exprWithoutBlock e0
+        tagPointer <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr tagType)
+        tagValue <- LLVM.IRBuilder.load tagPointer 0
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
 
         outgoing <- ifor as (\i (CheckedMatchArm xts e) -> do
             label <- LLVM.IRBuilder.block
             namespaced (do
-                destructureEnumVariant n i (fmap fst xts) p0
+                destructureEnumVariant n i xts p0
                 tailExpr e)
             pure (tagLit i, label))
 
         defaultLabel <- LLVM.IRBuilder.block
         LLVM.IRBuilder.unreachable
+
+tailExprWithoutBlock :: ExprWithoutBlock 'Checked -> IRBuilder ()
+tailExprWithoutBlock = \case
+    e@(CheckedVarExpr _ t) -> do
+        result <- exprWithoutBlock e
+        if hasPointerOperandType t then do
+            copyToReturnArg result (reifyType t)
+            LLVM.IRBuilder.retVoid
+        else
+            LLVM.IRBuilder.ret result
+    CheckedCallExpr n es returnType -> do
+        fn <- findFn n
+        as <- traverse exprWithoutBlock es
+        let as' = [(a, mempty) | a <- toList as]
+        if hasPointerOperandType returnType then do
+            -- We know that the return type of the callee is equal to the return
+            -- type of the caller, so we can reuse the caller's return argument.
+            let returnArg = localReference (operandType returnType) 0
+            void (LLVM.IRBuilder.call fn ((returnArg, mempty) : as'))
+            LLVM.IRBuilder.retVoid
+        else do
+            result <- LLVM.IRBuilder.call fn as'
+            LLVM.IRBuilder.ret result
+    e@(CheckedStructExpr n _) -> do
+        result <- exprWithoutBlock e
+        copyToReturnArg result (reifyStruct n)
+        LLVM.IRBuilder.retVoid
+    e@(CheckedEnumExpr n _ _) -> do
+        result <- exprWithoutBlock e
+        copyToReturnArg result (reifyEnum n Nothing)
+        LLVM.IRBuilder.retVoid
+    e -> do
+        result <- exprWithoutBlock e
+        LLVM.IRBuilder.ret result
