@@ -585,13 +585,17 @@ exprWithoutBlock = \case
         if "{}" `elem` leftovers then
             abort
         else do
-            let result =
-                    Text.Lazy.toStrict (Text.Lazy.Builder.toLazyText builder)
-
-            -- At this point there should be at most one chunk left; @mconcat@
+            -- At this point there should be at most one chunk left; @foldMap@
             -- conveniently handles both cases. We also make sure to add the
             -- trailing line feed character here.
-            let f' = CheckedFormatString (result <> mconcat leftovers <> "\n")
+            let result =
+                    Text.Lazy.toStrict
+                        (Text.Lazy.Builder.toLazyText (
+                                builder
+                            <>  foldMap Text.Lazy.Builder.fromText leftovers
+                            <>  "\n"))
+
+            let f' = CheckedFormatString result
 
             let es' = fmap fst ets'
 
