@@ -263,7 +263,8 @@ codegen (CheckedModule typeDefs (FnDef _ mainBlock) otherFnDefs) = mdo
     void (LLVM.IRBuilder.extern memcpyName memcpyArgTypes memcpyReturnType)
 
     -- Declare @printf@.
-    void (LLVM.IRBuilder.externVarArgs printfName printfArgTypes printfReturnType)
+    void (
+        LLVM.IRBuilder.externVarArgs printfName printfArgTypes printfReturnType)
 
     -- Add non-main functions to the 'Context'.
     zipWithM_ (\fd fn -> bindFn (fnDefName fd) fn) otherFnDefs otherFns
