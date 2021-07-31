@@ -11,7 +11,7 @@ fn next(s0: i64) -> RandomF64 {
     let x0 = (s1 ^ ((s1 >> 30) &  17179869183)) * (-4658895280553007687);
     let x1 = (x0 ^ ((x0 >> 27) & 137438953471)) * (-7723592293110705685);
     let x2 =  x1 ^ ((x1 >> 31) &   8589934591);
-    let x3 = (((x2 >> 11) & 9007199254740991) as f64) / 9007199254740992.0;
+    let x3 = ((x2 >> 11) & 9007199254740991) as f64 / 9007199254740992.0;
     RandomF64(x3, s1)
 }
 
@@ -214,8 +214,8 @@ fn make_camera_from_spec(spec: CameraSpec) -> Camera {
     let CameraSpec(lens, angle, aperture, focus, up, width, height) = spec;
     let v = vector_sub(lens, focus);
     let h = 2.0 * len(v) * sin(angle / 2.0) / cos(angle / 2.0);
-    let s = h / (height as f64);
-    let w = (width as f64) * s;
+    let s = h / height as f64;
+    let w = width as f64 * s;
     let z = unit(v);
     let x = cross_product(unit(up), z);
     let y = cross_product(z, x);
@@ -259,8 +259,8 @@ fn shoot(camera: Camera, i: i64, j: i64, s0: i64) -> RandomRay {
         vector_add(
             vector_add(
                 o,
-                vector_mul(((j as f64) + dj) * s, x)),
-                vector_mul(((i as f64) + di) * s, y));
+                vector_mul((j as f64 + dj) * s, x)),
+                vector_mul((i as f64 + di) * s, y));
     RandomRay(Ray(source, vector_sub(target, source)), s4)
 }
 
