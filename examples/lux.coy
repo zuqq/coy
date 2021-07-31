@@ -1,0 +1,439 @@
+struct RandomColor(Color, i64);
+
+struct RandomF64(f64, i64);
+
+struct RandomRay(Ray, i64);
+
+struct RandomVector(Vector, i64);
+
+fn next(s0: i64) -> RandomF64 {
+    let s1 = s0 + (-7046029254386353131);
+    let x0 = (s1 ^ ((s1 >> 30) &  17179869183)) * (-4658895280553007687);
+    let x1 = (x0 ^ ((x0 >> 27) & 137438953471)) * (-7723592293110705685);
+    let x2 =  x1 ^ ((x1 >> 31) &   8589934591);
+    let x3 = (((x2 >> 11) & 9007199254740991) as f64) / 9007199254740992.0;
+    RandomF64(x3, s1)
+}
+
+fn next_from_unit_sphere(s0: i64) -> RandomVector {
+    let pi = 3.14159265358979323846;
+
+    let RandomF64(a0, s1) = next(s0);
+    let a = 2.0 * pi * a0;
+
+    let RandomF64(z0, s2) = next(s1);
+    let z = 2.0 * z0 - 1.0;
+
+    let r = sqrt(1.0 - z * z);
+
+    RandomVector(Vector(r * cos(a), r * sin(a), z), s2)
+}
+
+struct Vector(f64, f64, f64);
+
+fn vector_add(v: Vector, w: Vector) -> Vector {
+    let Vector(x0, y0, z0) = v;
+    let Vector(x1, y1, z1) = w;
+    Vector(x0 + x1, y0 + y1, z0 + z1)
+}
+
+fn vector_sub(v: Vector, w: Vector) -> Vector {
+    let Vector(x0, y0, z0) = v;
+    let Vector(x1, y1, z1) = w;
+    Vector(x0 - x1, y0 - y1, z0 - z1)
+}
+
+fn vector_mul(a: f64, v: Vector) -> Vector {
+    let Vector(x, y, z) = v;
+    Vector(a * x, a * y, a * z)
+}
+
+fn cross_product(v: Vector, w: Vector) -> Vector {
+    let Vector(x0, y0, z0) = v;
+    let Vector(x1, y1, z1) = w;
+    Vector(y0 * z1 - z0 * y1, z0 * x1 - x0 * z1, x0 * y1 - y0 * x1)
+}
+
+fn dot_product(v: Vector, w: Vector) -> f64 {
+    let Vector(x0, y0, z0) = v;
+    let Vector(x1, y1, z1) = w;
+    x0 * x1 + y0 * y1 + z0 * z1
+}
+
+fn len(v: Vector) -> f64 {
+    sqrt(dot_product(v, v))
+}
+
+fn unit(v: Vector) -> Vector {
+    vector_mul(1.0 / len(v), v)
+}
+
+fn reflect(v: Vector, n: Vector) -> Vector {
+    vector_sub(v, vector_mul(2.0, vector_mul(dot_product(n, v), n)))
+}
+
+struct Ray(Vector, Vector);
+
+fn at(ray: Ray, t: f64) -> Vector {
+    let Ray(p, v) = ray;
+    vector_add(p, vector_mul(t, v))
+}
+
+enum MaybeF64 {
+    None(), Some(f64)
+}
+
+fn safe_sqrt(x: f64) -> MaybeF64 {
+    if x < 0.0 {
+        MaybeF64::None()
+    } else {
+        MaybeF64::Some(sqrt(x))
+    }
+}
+
+fn safe_time(t: f64) -> MaybeF64 {
+    if t < 0.001 {
+        MaybeF64::None()
+    } else {
+        MaybeF64::Some(t)
+    }
+}
+
+struct Sphere(Vector, f64);
+
+fn sphere_time(sphere: Sphere, ray: Ray) -> MaybeF64 {
+    let Sphere(center, radius) = sphere;
+    let Ray(origin, direction) = ray;
+
+    let v = vector_sub(origin, center);
+    let a = dot_product(direction, direction);
+    let b = dot_product(v, direction);
+    let c = dot_product(v, v) - radius * radius;
+    let disc = b * b - a * c;
+
+    match safe_sqrt(disc) {
+        MaybeF64::None()     => MaybeF64::None(),
+        MaybeF64::Some(root) => {
+            let t0 = (-b - root) / a;
+            let t1 = (-b + root) / a;
+            match safe_time(t0) {
+                MaybeF64::None()  => safe_time(t1),
+                MaybeF64::Some(t) => MaybeF64::Some(t)
+            }
+        }
+    }
+}
+
+fn sphere_normal(sphere: Sphere, p: Vector) -> Vector {
+    let Sphere(center, _) = sphere;
+    unit(vector_sub(p, center))
+}
+
+fn sphere_hit(sphere: Sphere, material: Material, ray: Ray) -> MaybeHit {
+    match sphere_time(sphere, ray) {
+        MaybeF64::None()  => MaybeHit::None(),
+        MaybeF64::Some(t) => {
+            let p = at(ray, t);
+            MaybeHit::Some(Hit(t, p, sphere_normal(sphere, p), material))
+        }
+    }
+}
+
+struct Color(f64, f64, f64);
+
+fn color_add(c0: Color, c1: Color) -> Color {
+    let Color(r0, g0, b0) = c0;
+    let Color(r1, g1, b1) = c1;
+    Color(r0 + r1, g0 + g1, b0 + b1)
+}
+
+fn color_mul(a: f64, c: Color) -> Color {
+    let Color(r, g, b) = c;
+    Color(a * r, a * g, a * b)
+}
+
+fn gradient(c0: Color, c1: Color, t: f64) -> Color {
+    color_add(color_mul(1.0 - t, c0), color_mul(t, c1))
+}
+
+fn mix(c0: Color, c1: Color) -> Color {
+    let Color(r0, g0, b0) = c0;
+    let Color(r1, g1, b1) = c1;
+    Color(r0 * r1, g0 * g1, b0 * b1)
+}
+
+enum Material {
+    Diffuse(Color), Specular(Color)
+}
+
+fn scatter_color(c0: Color, material: Material) -> Color {
+    match material {
+        Material::Diffuse(c)  => mix(c0, c),
+        Material::Specular(c) => mix(c0, c)
+    }
+}
+
+fn scatter_ray(
+    v: Vector,           // Direction of the incoming ray.
+    p: Vector,           // Point of impact.
+    n: Vector,           // Surface normal at the point of impact.
+    material: Material,  // Surface material.
+    s0: i64              // State of the PRNG.
+) -> RandomRay {
+    match material {
+        Material::Diffuse(_)  => {
+            let RandomVector(u, s1) = next_from_unit_sphere(s0);
+            RandomRay(Ray(p, vector_add(n, u)), s1)
+        },
+        Material::Specular(_) => {
+            RandomRay(Ray(p, reflect(v, n)), s0)
+        }
+    }
+}
+
+struct CameraSpec(
+    Vector,  // Center of the lens.
+    f64,     // Angle of view.
+    f64,     // Diameter of the lens.
+    Vector,  // Center of the focal plane.
+    Vector,  // Upward direction.
+    i64,     // Width in pixels.
+    i64      // Height in pixels.
+);
+
+struct Camera(
+    Vector,  // Center of the lens.
+    f64,     // Aperture.
+    Vector,  // Origin of the focal plane.
+    Vector,  // Unit vector in x-direction.
+    Vector,  // Unit vector in y-direction.
+    f64      // Side length of a pixel.
+);
+
+fn make_camera_from_spec(spec: CameraSpec) -> Camera {
+    let CameraSpec(lens, angle, aperture, focus, up, width, height) = spec;
+    let v = vector_sub(lens, focus);
+    let h = 2.0 * len(v) * sin(angle / 2.0) / cos(angle / 2.0);
+    let s = h / (height as f64);
+    let w = (width as f64) * s;
+    let z = unit(v);
+    let x = cross_product(unit(up), z);
+    let y = cross_product(z, x);
+    let o =
+        vector_sub(
+            vector_sub(
+                focus,
+                vector_mul(w / 2.0, x)),
+                vector_mul(h / 2.0, y));
+    Camera(lens, aperture, o, x, y, s)
+}
+
+fn shoot(camera: Camera, i: i64, j: i64, s0: i64) -> RandomRay {
+    let pi = 3.14159265358979323846;
+
+    let Camera(lens, aperture, o, x, y, s) = camera;
+
+    // Generate the random offset from the center of the lens in order to
+    // simulate depth-of-field.
+    let RandomF64(a0, s1) = next(s0);
+    let a = 2.0 * pi * a0;
+
+    let RandomF64(r0, s2) = next(s1);
+    let r = aperture / 2.0 * r0;
+
+    let dx = r * cos(a);
+    let dy = r * sin(a);
+
+    // Generate the random offset from the lower-left corner of the pixel for
+    // anti-aliasing purposes.
+    let RandomF64(dj, s3) = next(s2);
+    let RandomF64(di, s4) = next(s3);
+
+    let source =
+        vector_add(
+            vector_add(
+                lens,
+                vector_mul(dx, x)),
+                vector_mul(dy, y));
+    let target =
+        vector_add(
+            vector_add(
+                o,
+                vector_mul(((j as f64) + dj) * s, x)),
+                vector_mul(((i as f64) + di) * s, y));
+    RandomRay(Ray(source, vector_sub(target, source)), s4)
+}
+
+fn print_ppm_header(width: i64, height: i64) -> () {
+    println!("P3 {} {} 255", width, height)
+}
+
+fn scale(x: f64) -> i64 {
+    (255.999 * x) as i64
+}
+
+fn print_ppm_color(c: Color) -> () {
+    let Color(r, g, b) = c;
+    println!("{} {} {}", scale(r), scale(g), scale(b))
+}
+
+struct Hit(
+    f64,      // Time.
+    Vector,   // Point of impact.
+    Vector,   // Outward-facing surface normal at the point of impact.
+    Material  // Surface material.
+);
+
+enum MaybeHit {
+    None(), Some(Hit)
+}
+
+fn ground_time(ray: Ray) -> MaybeF64 {
+    let Ray(p, v) = ray;
+    let Vector(_, y0, _) = p;
+    let Vector(_, dy, _) = v;
+
+    if y0 >= 0.0 {
+        if dy < 0.0 {
+            safe_time(y0 / (-dy))
+        } else {
+            MaybeF64::None()
+        }
+    } else {
+        if dy > 0.0 {
+            safe_time(y0 / (-dy))
+        } else {
+            MaybeF64::None()
+        }
+    }
+}
+
+fn ground_hit(material: Material, ray: Ray) -> MaybeHit {
+    let Ray(p, _) = ray;
+    let Vector(_, _, z) = p;
+
+    match ground_time(ray) {
+        MaybeF64::None()  => MaybeHit::None(),
+        MaybeF64::Some(t) => {
+            let n =
+                if z >= 0.0 {
+                    Vector(0.0, 1.0, 0.0)
+                } else {
+                    Vector(0.0, -1.0, 0.0)
+                };
+            MaybeHit::Some(Hit(t, at(ray, t), n, material))
+        }
+    }
+}
+
+fn hit(ray: Ray) -> MaybeHit {
+    let sphere = Sphere(Vector(0.0, 0.5, 0.0), 0.5);
+    let sphere_material = Material::Specular(Color(0.773, 0.777, 0.780));
+    let ground_material = Material::Diffuse(Color(0.482, 0.702, 0.412));
+
+    let maybe_sphere_hit = sphere_hit(sphere, sphere_material, ray);
+    let maybe_ground_hit = ground_hit(ground_material, ray);
+
+    match maybe_sphere_hit {
+        MaybeHit::None()   => maybe_ground_hit,
+        MaybeHit::Some(h0) => {
+            let Hit(t0, _, _, _) = h0;
+            match maybe_ground_hit {
+                MaybeHit::None()   => maybe_sphere_hit,
+                MaybeHit::Some(h1) => {
+                    let Hit(t1, _, _, _) = h1;
+                    if t0 <= t1 {
+                        maybe_sphere_hit
+                    } else {
+                        maybe_ground_hit
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn sky(v: Vector) -> Color {
+    let Vector(_, y, _) = unit(v);
+    gradient(Color(1.0, 1.0, 1.0), Color(0.765, 0.843, 0.9339), (y + 1.0) / 2.0)
+}
+
+fn trace_ray_loop(ray0: Ray, k: i64, c0: Color, s0: i64) -> RandomColor {
+    if k >= 50 {
+        RandomColor(c0, s0)
+    } else {
+        let Ray(_, v) = ray0;
+        match hit(ray0) {
+            MaybeHit::None()  => RandomColor(mix(c0, sky(v)), s0),
+            MaybeHit::Some(h) => {
+                let Hit(_, p, n, material) = h;
+                let RandomRay(ray, s1) = scatter_ray(v, p, n, material, s0);
+                trace_ray_loop(ray, k + 1, scatter_color(c0, material), s1)
+            }
+        }
+    }
+}
+
+fn trace_ray(ray: Ray, s0: i64) -> RandomColor {
+    trace_ray_loop(ray, 0, Color(1.0, 1.0, 1.0), s0)
+}
+
+fn render_pixel_loop(
+    camera: Camera,
+    i: i64,
+    j: i64,
+    k: i64,     // Loop variable.
+    c0: Color,  // Accumulator.
+    s0: i64     // State of the PRNG.
+) -> RandomColor {
+    if k >= 100 {
+        RandomColor(color_mul(1.0 / 100.0, c0), s0)
+    } else {
+        let RandomRay(ray, s1) = shoot(camera, i, j, s0);
+        let RandomColor(c, s2) = trace_ray(ray, s1);
+        render_pixel_loop(camera, i, j, k + 1, color_add(c0, c), s2)
+    }
+}
+
+fn render_pixel(camera: Camera, i: i64, j: i64, s0: i64) -> RandomColor {
+    render_pixel_loop(camera, i, j, 0, Color(0.0, 0.0, 0.0), s0)
+}
+
+fn main_loop(camera: Camera, j_max: i64, i: i64, j: i64, s0: i64) -> () {
+    if i < 0 {
+        ()
+    } else {
+        if j >= j_max {
+            main_loop(camera, j_max, i - 1, 0, s0)
+        } else {
+            let RandomColor(c, s1) = render_pixel(camera, i, j, s0);
+            print_ppm_color(c);
+            main_loop(camera, j_max, i, j + 1, s1)
+        }
+    }
+}
+
+fn main() -> () {
+    let pi = 3.14159265358979323846;
+
+    let width  = 400;
+    let height = 400;
+
+    print_ppm_header(width, height);
+
+    let camera = make_camera_from_spec(
+        CameraSpec(
+            Vector(0.0, 2.0, 3.0),
+            pi / 4.0,
+            0.25,
+            Vector(0.0, 1.0, 0.0),
+            Vector(0.0, 1.0, 0.0),
+            width,
+            height
+        )
+    );
+
+    let s0 = 1;
+
+    main_loop(camera, width, height - 1, 0, s0)
+}
