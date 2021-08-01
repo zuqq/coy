@@ -1,3 +1,5 @@
+const PI: f64 = 3.14159265358979323846;
+
 struct RandomColor(Color, i64);
 
 struct RandomF64(f64, i64);
@@ -16,10 +18,8 @@ fn next(s0: i64) -> RandomF64 {
 }
 
 fn next_from_unit_sphere(s0: i64) -> RandomVector {
-    let pi = 3.14159265358979323846;
-
     let RandomF64(a0, s1) = next(s0);
-    let a = 2.0 * pi * a0;
+    let a = 2.0 * PI * a0;
 
     let RandomF64(z0, s2) = next(s1);
     let z = 2.0 * z0 - 1.0;
@@ -141,6 +141,10 @@ fn sphere_hit(sphere: Sphere, material: Material, ray: Ray) -> MaybeHit {
 
 struct Color(f64, f64, f64);
 
+const BLACK: Color = Color(0.000, 0.000, 0.0000);
+const BLUE:  Color = Color(0.765, 0.843, 0.9339);
+const WHITE: Color = Color(1.000, 1.000, 1.0000);
+
 fn color_add(c0: Color, c1: Color) -> Color {
     let Color(r0, g0, b0) = c0;
     let Color(r1, g1, b1) = c1;
@@ -229,14 +233,12 @@ fn make_camera_from_spec(spec: CameraSpec) -> Camera {
 }
 
 fn shoot(camera: Camera, i: i64, j: i64, s0: i64) -> RandomRay {
-    let pi = 3.14159265358979323846;
-
     let Camera(lens, aperture, o, x, y, s) = camera;
 
     // Generate the random offset from the center of the lens in order to
     // simulate depth-of-field.
     let RandomF64(a0, s1) = next(s0);
-    let a = 2.0 * pi * a0;
+    let a = 2.0 * PI * a0;
 
     let RandomF64(r0, s2) = next(s1);
     let r = aperture / 2.0 * r0;
@@ -326,13 +328,14 @@ fn ground_hit(material: Material, ray: Ray) -> MaybeHit {
     }
 }
 
-fn hit(ray: Ray) -> MaybeHit {
-    let sphere = Sphere(Vector(0.0, 0.5, 0.0), 0.5);
-    let sphere_material = Material::Specular(Color(0.773, 0.777, 0.780));
-    let ground_material = Material::Diffuse(Color(0.482, 0.702, 0.412));
+const SPHERE: Sphere = Sphere(Vector(0.0, 0.5, 0.0), 0.5);
+const SPHERE_MATERIAL: Material =
+    Material::Specular(Color(0.773, 0.777, 0.780));
+const GROUND_MATERIAL: Material = Material::Diffuse(Color(0.482, 0.702, 0.412));
 
-    let maybe_sphere_hit = sphere_hit(sphere, sphere_material, ray);
-    let maybe_ground_hit = ground_hit(ground_material, ray);
+fn hit(ray: Ray) -> MaybeHit {
+    let maybe_sphere_hit = sphere_hit(SPHERE, SPHERE_MATERIAL, ray);
+    let maybe_ground_hit = ground_hit(GROUND_MATERIAL, ray);
 
     match maybe_sphere_hit {
         MaybeHit::None()   => maybe_ground_hit,
@@ -355,7 +358,7 @@ fn hit(ray: Ray) -> MaybeHit {
 
 fn sky(v: Vector) -> Color {
     let Vector(_, y, _) = unit(v);
-    gradient(Color(1.0, 1.0, 1.0), Color(0.765, 0.843, 0.9339), (y + 1.0) / 2.0)
+    gradient(WHITE, BLUE, (y + 1.0) / 2.0)
 }
 
 fn trace_ray_loop(ray0: Ray, k: i64, c0: Color, s0: i64) -> RandomColor {
@@ -375,7 +378,7 @@ fn trace_ray_loop(ray0: Ray, k: i64, c0: Color, s0: i64) -> RandomColor {
 }
 
 fn trace_ray(ray: Ray, s0: i64) -> RandomColor {
-    trace_ray_loop(ray, 0, Color(1.0, 1.0, 1.0), s0)
+    trace_ray_loop(ray, 0, WHITE, s0)
 }
 
 fn render_pixel_loop(
@@ -396,7 +399,7 @@ fn render_pixel_loop(
 }
 
 fn render_pixel(camera: Camera, i: i64, j: i64, s0: i64) -> RandomColor {
-    render_pixel_loop(camera, i, j, 0, Color(0.0, 0.0, 0.0), s0)
+    render_pixel_loop(camera, i, j, 0, BLACK, s0)
 }
 
 fn main_loop(camera: Camera, j_max: i64, i: i64, j: i64, s0: i64) -> () {
@@ -414,8 +417,6 @@ fn main_loop(camera: Camera, j_max: i64, i: i64, j: i64, s0: i64) -> () {
 }
 
 fn main() -> () {
-    let pi = 3.14159265358979323846;
-
     let width  = 400;
     let height = 400;
 
@@ -424,7 +425,7 @@ fn main() -> () {
     let camera = make_camera_from_spec(
         CameraSpec(
             Vector(0.0, 2.0, 3.0),
-            pi / 4.0,
+            PI / 4.0,
             0.25,
             Vector(0.0, 1.0, 0.0),
             Vector(0.0, 1.0, 0.0),

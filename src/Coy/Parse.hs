@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 
@@ -23,9 +24,10 @@ import Data.Attoparsec.Expr (
 import Data.Attoparsec.Text (Parser)
 import Data.Bifunctor (bimap)
 import Data.Char (
-    isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isPrint, isSpace)
-import Data.Either (partitionEithers)
+    isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isDigit, isPrint, isSpace)
 import Data.Functor (($>), void)
+import Lens.Micro (_1, _2, _3, over)
+import Data.Monoid (Endo (Endo, appEndo))
 import Data.Text (Text)
 
 import qualified Data.Attoparsec.Text as Parser
@@ -37,13 +39,38 @@ import Coy.Syntax
 newtype ParseError = ParseError String
     deriving Show
 
+cons :: a -> Endo [a]
+cons = Endo . (:)
+
+run :: Monoid m => Endo m -> m
+run e = appEndo e mempty
+
 parse :: Text -> Either ParseError (Module 'Unchecked)
 parse s = do
     let result = Parser.parseOnly p s
-    (typeDefs, fnDefs) <- bimap ParseError partitionEithers result
-    pure (UncheckedModule typeDefs fnDefs)
+    (typeDefs, constDefs, fnDefs) <- bimap ParseError runAll result
+    pure (UncheckedModule typeDefs constDefs fnDefs)
   where
-    p = space *> many (Parser.eitherP typeDef fnDef) <* Parser.endOfInput
+    -- Builds a triple of difference lists.
+    p = space *> go mempty <* Parser.endOfInput
+
+    -- Corresponds to @many@.
+    go e = go1 e <|> go2 e <|> go3 e <|> pure e
+
+    -- Corresponds to different incarnations of @some@.
+    go1 e = do
+        td <- typeDef
+        go (over _1 (<> cons td) e)
+
+    go2 e = do
+        cd <- constDef
+        go (over _2 (<> cons cd) e)
+
+    go3 e = do
+        fd <- fnDef
+        go (over _3 (<> cons fd) e)
+
+    runAll = over _1 run . over _2 run . over _3 run
 
 typeDef :: Parser (TypeDef 'Unchecked)
 typeDef = structDef <|> enumDef
@@ -102,7 +129,7 @@ statement = letStatement <|> exprStatement
     letStatement = do
         "let" *> space1
         p <- pattern
-        Parser.char '=' *> space
+        equal
         e <- expr
         semicolon
         pure (LetStatement p e)
@@ -196,9 +223,11 @@ exprWithoutBlock = buildExpressionParser operators simpleExpr
         <|> callExpr
         <|> printLnExpr
         <|> varExpr
-        -- Similary, @enumExpr@ needs to precede @structExpr@.
+        -- Similary, @enumExpr@ needs to precede @structExpr@; both of them
+        -- need to precede @constExpr@.
         <|> enumExpr
         <|> structExpr
+        <|> constExpr
 
     litExpr = fmap LitExpr lit
 
@@ -208,6 +237,8 @@ exprWithoutBlock = buildExpressionParser operators simpleExpr
         pure (UncheckedCallExpr n (Vector.fromList es))
 
     varExpr = fmap UncheckedVarExpr valueName
+
+    constExpr = fmap UncheckedConstExpr constName
 
     enumExpr = do
         n <- enumName
@@ -263,6 +294,33 @@ lit = unitLit <|> boolLit <|> f64Lit <|> i64Lit
 
     i64Lit = fmap I64Lit Parser.decimal <* space
 
+constDef :: Parser (ConstDef 'Unchecked)
+constDef = do
+    "const" *> space1
+    x <- constName
+    colon
+    t <- typeName
+    equal
+    c <- constInit
+    semicolon
+    pure (ConstDef (ConstDecl x t) c)
+  where
+    constInit = litInit <|> structInit <|> enumInit
+
+    litInit = fmap LitInit lit
+
+    structInit = do
+        n <- structName
+        cs <- parenthesized (commaSeparated constInit)
+        pure (StructInit n (Vector.fromList cs))
+
+    enumInit = do
+        n <- enumName
+        void "::"
+        v <- enumVariantName
+        cs <- parenthesized (commaSeparated constInit)
+        pure (UncheckedEnumInit n v (Vector.fromList cs))
+
 comment :: Parser ()
 comment = do
     void "//"
@@ -302,6 +360,9 @@ semicolon = Parser.char ';' *> space
 colon :: Parser ()
 colon = Parser.char ':' *> space
 
+equal :: Parser ()
+equal = Parser.char '=' *> space
+
 withinBraces :: Parser a -> Parser a
 withinBraces p = do
     Parser.char '{' *> space
@@ -320,6 +381,13 @@ upperIdentifier :: Parser Text
 upperIdentifier = do
     a <- Parser.satisfy isAsciiUpper
     s <- Parser.takeWhile (\c -> isAscii c && (isAlphaNum c || c == '_'))
+    space
+    pure (Text.cons a s)
+
+constName :: Parser Text
+constName = do
+    a <- Parser.satisfy (\c -> isAsciiUpper c || c == '_')
+    s <- Parser.takeWhile (\c -> isAsciiUpper c || isDigit c || c == '_')
     space
     pure (Text.cons a s)
 

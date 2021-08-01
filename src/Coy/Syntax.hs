@@ -15,12 +15,15 @@ data Status = Unchecked | Checked
 data Module (u :: Status) where
     UncheckedModule
         :: [TypeDef 'Unchecked]
+        -> [ConstDef 'Unchecked]
         -> [FnDef 'Unchecked]
         -> Module 'Unchecked
 
     CheckedModule
         :: [TypeDef 'Checked]
         -- ^ Struct and enum definitions.
+        -> [ConstDef 'Checked]
+        -- ^ Definitions of global constants.
         -> FnDef 'Checked
         -- ^ Definition of the main function.
         -> [FnDef 'Checked]
@@ -28,6 +31,9 @@ data Module (u :: Status) where
         -> Module 'Checked
 
 deriving instance Show (Module u)
+
+data ModuleSig (u :: Status) = ModuleSig [TypeDef u] [ConstDecl u] [FnDecl u]
+    deriving Show
 
 data TypeDef (u :: Status)
     = StructDef Text (Vector (Type u))
@@ -144,6 +150,10 @@ data ExprWithoutBlock (u :: Status) where
 
     CheckedVarExpr :: Text -> Type 'Checked -> ExprWithoutBlock 'Checked
 
+    UncheckedConstExpr :: Text -> ExprWithoutBlock 'Unchecked
+
+    CheckedConstExpr :: Text -> Type 'Checked -> ExprWithoutBlock 'Checked
+
     UnaryOpExpr
         :: UnaryOp u
         -- ^ The unary operator.
@@ -224,6 +234,13 @@ data Lit
     | F64Lit Double
     deriving Show
 
+litType :: Lit -> Type u
+litType = \case
+    UnitLit _ -> Unit
+    BoolLit _ -> Bool
+    I64Lit _ -> I64
+    F64Lit _ -> F64
+
 data UnaryOp (u :: Status) where
     -- @-x@
     Neg :: UnaryOp u
@@ -285,3 +302,34 @@ data FormatString (u :: Status) where
     CheckedFormatString :: Text -> FormatString 'Checked
 
 deriving instance Show (FormatString u)
+
+data ConstDef (u :: Status) = ConstDef (ConstDecl u) (ConstInit u)
+    deriving Show
+
+data ConstDecl (u :: Status) = ConstDecl Text (Type u)
+    deriving Show
+
+data ConstInit (u :: Status) where
+    LitInit :: Lit -> ConstInit u
+
+    StructInit :: Text -> Vector (ConstInit u) -> ConstInit u
+
+    UncheckedEnumInit
+        :: Text
+        -- ^ Name of the enum.
+        -> Text
+        -- ^ Name of the enum variant.
+        -> Vector (ConstInit 'Unchecked)
+        -- ^ Values for the components.
+        -> ConstInit 'Unchecked
+
+    CheckedEnumInit
+        :: Text
+        -- ^ Name of the enum.
+        -> Int
+        -- ^ Index of the enum variant.
+        -> Vector (ConstInit 'Checked)
+        -- ^ Values for the components.
+        -> ConstInit 'Checked
+
+deriving instance Show (ConstInit u)

@@ -43,6 +43,7 @@ import Coy.Syntax
 data Context = Context
     { _structs :: Map Text (Vector (Type 'Checked))
     , _enums :: Map Text (Map Text (Int, Vector (Type 'Checked)))
+    , _consts :: Map Text (Type 'Checked)
     , _fns :: Map Text (Vector (Type 'Checked), Type 'Checked)
     , _values :: Map Text (Type 'Checked)
     }
@@ -54,6 +55,9 @@ structs = lens _structs (\c ss -> c {_structs = ss})
 enums :: Lens' Context (Map Text (Map Text (Int, Vector (Type 'Checked))))
 enums = lens _enums (\c es -> c {_enums = es})
 
+consts :: Lens' Context (Map Text (Type 'Checked))
+consts = lens _consts (\c cs -> c {_consts = cs})
+
 fns :: Lens' Context (Map Text (Vector (Type 'Checked), Type 'Checked))
 fns = lens _fns (\c fs -> c {_fns = fs})
 
@@ -61,11 +65,11 @@ values :: Lens' Context (Map Text (Type 'Checked))
 values = lens _values (\c vs -> c {_values = vs})
 
 instance Semigroup Context where
-    Context ss0 es0 fs0 vs0 <> Context ss1 es1 fs1 vs1 =
-        Context (ss0 <> ss1) (es0 <> es1) (fs0 <> fs1) (vs0 <> vs1)
+    Context ss0 es0 cs0 fs0 vs0 <> Context ss1 es1 cs1 fs1 vs1 =
+        Context (ss0 <> ss1) (es0 <> es1) (cs0 <> cs1) (fs0 <> fs1) (vs0 <> vs1)
 
 instance Monoid Context where
-    mempty = Context mempty mempty mempty mempty
+    mempty = Context mempty mempty mempty mempty mempty
 
 data SemanticErrorMessage
     = RedefinedTypes [TypeDef 'Unchecked]
@@ -75,8 +79,33 @@ data SemanticErrorMessage
     | StructNotFound Text
     | EnumNotFound Text
     | EnumVariantNotFound Text Text
+    | ConstNotFound Text
     | FnNotFound Text
     | ValueNotFound Text
+    | ConstDefTypeMismatch
+    -- ^ The declared and observed type of a constant differ.
+        (ConstDecl 'Checked)
+        -- ^ Declared type.
+        (ConstInit 'Unchecked)
+        -- ^ Observed type.
+    | StructInitTypeMismatch
+    -- ^ The given argument list doesn't conform to the constructor's signature.
+        Text
+        -- ^ Name of the struct.
+        (Vector (ConstInit 'Unchecked))
+        -- ^ Arguments.
+        (Vector (Type 'Checked))
+        -- ^ Types of the arguments.
+    | EnumInitTypeMismatch
+    -- ^ The given argument list doesn't conform to the constructor's signature.
+        Text
+        -- ^ Name of the enum.
+        Text
+        -- ^ Name of the enum variant.
+        (Vector (ConstInit 'Unchecked))
+        -- ^ Arguments.
+        (Vector (Type 'Checked))
+        -- ^ Types of the arguments.
     | MainFnDefMissing
     | MainFnDefTypeMismatch (FnDef 'Checked)
     | FnDefTypeMismatch
@@ -217,6 +246,9 @@ data SemanticError = SemanticError Context SemanticErrorMessage
 
 type Semantic = StateT Context (Except SemanticError)
 
+runSemanticWith :: Context -> Semantic a -> Either SemanticError a
+runSemanticWith c = runExcept . flip evalStateT c
+
 throwEmptySemanticError :: SemanticErrorMessage -> Either SemanticError a
 throwEmptySemanticError e = throwError (SemanticError mempty e)
 
@@ -242,6 +274,11 @@ findEnumVariant :: Text -> Text -> Semantic (Int, Vector (Type 'Checked))
 findEnumVariant n v = do
     e <- findEnum n
     Map.lookup v e `orFail` EnumVariantNotFound n v
+
+findConst :: Text -> Semantic (Type 'Checked)
+findConst n = do
+    cs <- use consts
+    Map.lookup n cs `orFail` ConstNotFound n
 
 findFn :: Text -> Semantic (Vector (Type 'Checked), Type 'Checked)
 findFn n = do
@@ -271,14 +308,20 @@ intrinsicFns =
     ]
 
 semantic :: Module 'Unchecked -> Either SemanticError (Module 'Checked)
-semantic (UncheckedModule typeDefs fnDefs) = do
+semantic (UncheckedModule typeDefs constDefs fnDefs) = do
+    let constDecls = [d | ConstDef d _ <- constDefs]
+
     let fnDecls = [d | FnDef d _ <- fnDefs]
 
-    (typeDefs', fnDecls') <- typeDefsAndFnDecls (typeDefs, fnDecls)
+    let moduleSig = ModuleSig typeDefs constDecls fnDecls
+
+    ModuleSig typeDefs' constDecls' fnDecls' <- resolveModuleSigNames moduleSig
 
     let ss = Map.fromList [(n, ts) | StructDef n ts <- typeDefs']
 
     let es = Map.fromList [(n, enumVariants vs) | EnumDef n vs <- typeDefs']
+
+    let cs = Map.fromList [(n, t) | ConstDecl n t <- constDecls']
 
     let fs = Map.fromList (
                 intrinsicFns
@@ -286,10 +329,13 @@ semantic (UncheckedModule typeDefs fnDefs) = do
 
     let vs = mempty
 
-    let context = Context ss es fs vs
+    let context = Context ss es cs fs vs
 
-    fnDefs' <- runExcept (
-        evalStateT (zipWithM fnDef fnDecls' [b | FnDef _ b <- fnDefs]) context)
+    constDefs' <- runSemanticWith context (
+        zipWithM constDef constDecls' [c | ConstDef _ c <- constDefs])
+
+    fnDefs' <- runSemanticWith context (
+        zipWithM fnDef fnDecls' [b | FnDef _ b <- fnDefs])
 
     let (mainFnDefs', otherFnDefs') =
             partition (\fd -> fnDefName fd == "main") fnDefs'
@@ -297,7 +343,8 @@ semantic (UncheckedModule typeDefs fnDefs) = do
     case mainFnDefs' of
         [mainFnDef'@(FnDef (FnDecl _ as t) _)]
             | Vector.null as, t == Unit ->
-                pure (CheckedModule typeDefs' mainFnDef' otherFnDefs')
+                pure (
+                    CheckedModule typeDefs' constDefs' mainFnDef' otherFnDefs')
             | otherwise ->
                 throwEmptySemanticError (MainFnDefTypeMismatch mainFnDef')
         _ -> throwEmptySemanticError MainFnDefMissing
@@ -305,13 +352,11 @@ semantic (UncheckedModule typeDefs fnDefs) = do
     enumVariants vs =
         Map.fromList [(v, (i, ts)) | (i, EnumVariant v ts) <- indexed vs]
 
--- The checked type definitions are topologically sorted; the order of the
--- checked function declarations matches the order of the corresponding
--- unchecked function declarations.
-typeDefsAndFnDecls
-    :: ([TypeDef 'Unchecked], [FnDecl 'Unchecked])
-    -> Either SemanticError ([TypeDef 'Checked], [FnDecl 'Checked])
-typeDefsAndFnDecls (tds, fds) = do
+-- Preserves the order of the definitions or declarations in each group.
+resolveModuleSigNames
+    :: ModuleSig 'Unchecked
+    -> Either SemanticError (ModuleSig 'Checked)
+resolveModuleSigNames (ModuleSig tds cds fds) = do
     let structNames = Set.fromList [n | StructDef n _ <- tds]
 
     let enumNames = Set.fromList [n | EnumDef n _ <- tds]
@@ -351,6 +396,11 @@ typeDefsAndFnDecls (tds, fds) = do
                 pure (EnumVariant v ts'))
             pure (EnumDef n vs'))
 
+    -- Name resolution for the constant declarations.
+    cds' <- for cds (\(ConstDecl n t) -> do
+        t' <- findType t
+        pure (ConstDecl n t'))
+
     -- Name resolution for the function declarations.
     fds' <- for fds (\(FnDecl n as t) -> do
         as' <- for as (\(FnArg an at) -> do
@@ -359,7 +409,7 @@ typeDefsAndFnDecls (tds, fds) = do
         t' <- findType t
         pure (FnDecl n as' t'))
 
-    -- Check that the type definitions are acyclic and topologically sort them.
+    -- Check that the type definitions are acyclic.
     let number =
             (Map.fromList [(typeDefName td, i) | (i, td) <- indexed tds] Map.!)
 
@@ -372,13 +422,11 @@ typeDefsAndFnDecls (tds, fds) = do
 
     let labelWithUncheckedTypeDef = (Map.fromList (indexed tds) Map.!)
 
-    let labelWithCheckedTypeDef = (Map.fromList (indexed tds') Map.!)
-
     case topSort graph of
         Left typeCycle ->
             throwEmptySemanticError
-                    (TypeCycle (fmap labelWithUncheckedTypeDef typeCycle))
-        Right typeOrder -> pure (fmap labelWithCheckedTypeDef typeOrder, fds')
+                (TypeCycle (fmap labelWithUncheckedTypeDef typeCycle))
+        Right _ -> pure (ModuleSig tds' cds' fds')
 
 fnDef :: FnDecl 'Checked -> Block 'Unchecked -> Semantic (FnDef 'Checked)
 fnDef d@(FnDecl n as returnType) b = do
@@ -486,15 +534,13 @@ exprWithoutBlock
     :: ExprWithoutBlock 'Unchecked
     -> Semantic (ExprWithoutBlock 'Checked, Type 'Checked)
 exprWithoutBlock = \case
-    LitExpr l ->
-        case l of
-            UnitLit () -> pure (LitExpr (UnitLit ()), Unit)
-            BoolLit b -> pure (LitExpr (BoolLit b), Bool)
-            I64Lit x -> pure (LitExpr (I64Lit x), I64)
-            F64Lit f -> pure (LitExpr (F64Lit f), F64)
+    LitExpr l -> pure (LitExpr l, litType l)
     UncheckedVarExpr x -> do
         t <- findValue x
         pure (CheckedVarExpr x t, t)
+    UncheckedConstExpr x -> do
+        t <- findConst x
+        pure (CheckedConstExpr x t, t)
     UnaryOpExpr o e -> do
         (e', t) <- exprWithoutBlock e
         case (o, t) of
@@ -600,3 +646,36 @@ exprWithoutBlock = \case
             let es' = fmap fst ets'
 
             pure (PrintLnExpr f' es', Unit)
+
+constDef
+    :: ConstDecl 'Checked
+    -> ConstInit 'Unchecked
+    -> Semantic (ConstDef 'Checked)
+constDef d@(ConstDecl _ constDeclType) c = do
+    (c', t) <- constInit c
+    if constDeclType == t then
+        pure (ConstDef d c')
+    else
+        throwSemanticError (ConstDefTypeMismatch d c)
+
+constInit
+    :: ConstInit 'Unchecked
+    -> Semantic (ConstInit 'Checked, Type 'Checked)
+constInit = \case
+    LitInit l -> pure (LitInit l, litType l)
+    StructInit n cs -> do
+        fieldTypes <- findStruct n
+        cts <- traverse constInit cs
+        let ts = fmap snd cts
+        if ts == fieldTypes then
+            pure (StructInit n (fmap fst cts), Struct n)
+        else
+            throwSemanticError (StructInitTypeMismatch n cs ts)
+    UncheckedEnumInit n v cs -> do
+        (i, fieldTypes) <- findEnumVariant n v
+        cts <- traverse constInit cs
+        let ts = fmap snd cts
+        if ts == fieldTypes then
+            pure (CheckedEnumInit n i (fmap fst cts), Enum n)
+        else
+            throwSemanticError (EnumInitTypeMismatch n v cs ts)

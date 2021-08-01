@@ -25,6 +25,7 @@ import qualified Data.Text.Encoding as Text.Encoding
 import qualified Data.Vector as Vector
 import qualified LLVM.AST
 import qualified LLVM.AST.Constant
+import qualified LLVM.AST.Float
 import qualified LLVM.AST.FloatingPointPredicate
 import qualified LLVM.AST.Global
 import qualified LLVM.AST.IntegerPredicate
@@ -35,10 +36,14 @@ import qualified LLVM.IRBuilder.Extended as LLVM.IRBuilder
 import Coy.Syntax
 
 data Context = Context
-    { _fns :: Map Text LLVM.AST.Operand
+    { _consts :: Map Text LLVM.AST.Operand
+    , _fns :: Map Text LLVM.AST.Operand
     , _values :: Map Text LLVM.AST.Operand
     , _symbolCounter :: Int
     }
+
+consts :: Lens' Context (Map Text LLVM.AST.Operand)
+consts = lens _consts (\s cs -> s {_consts = cs})
 
 fns :: Lens' Context (Map Text LLVM.AST.Operand)
 fns = lens _fns (\s fs -> s {_fns = fs})
@@ -55,9 +60,15 @@ type IRBuilder = LLVM.IRBuilder.IRBuilderT ModuleBuilder
 
 buildModule :: String -> ModuleBuilder a -> LLVM.AST.Module
 buildModule n builder =
-    evalState (LLVM.IRBuilder.buildModuleT n' builder) (Context mempty mempty 0)
+    evalState (LLVM.IRBuilder.buildModuleT n' builder) (Context mempty mempty mempty 0)
   where
     n' = ByteString.Short.toShort (ByteString.Char8.pack n)
+
+bindConst :: Text -> LLVM.AST.Operand -> ModuleBuilder ()
+bindConst x t = consts %= Map.insert x t
+
+findConst :: Text -> IRBuilder LLVM.AST.Operand
+findConst x = fmap (Map.! x) (use consts)
 
 bindFn :: Text -> LLVM.AST.Operand -> ModuleBuilder ()
 bindFn n t = fns %= Map.insert n t
@@ -246,7 +257,7 @@ computeEnumSizes typeDefs = enumSizes
 codegen :: Module 'Checked -> ModuleBuilder ()
 -- Here and elsewhere the @-XRecursiveDo@ extension allows me to use forward
 -- references without too much trouble.
-codegen (CheckedModule typeDefs (FnDef _ mainBlock) otherFnDefs) = mdo
+codegen (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
     -- Define the unit type.
     void (defineType "unit" (LLVM.AST.StructureType False mempty))
 
@@ -265,6 +276,22 @@ codegen (CheckedModule typeDefs (FnDef _ mainBlock) otherFnDefs) = mdo
     -- Declare @printf@.
     void (
         LLVM.IRBuilder.externVarArgs printfName printfArgTypes printfReturnType)
+
+    for_ constDefs (\(ConstDef (ConstDecl x t) c) -> do
+        let x' = reifyName x
+
+        let t' =
+                case c of
+                    -- Enum constants have to be defined to have the variant
+                    -- type; they are cast to the base type at each use site.
+                    CheckedEnumInit n i _ -> reifyEnum n (Just i)
+                    _ -> reifyType t
+
+        let c' = reifyConstInit c
+
+        reference <- LLVM.IRBuilder.global x' t' c'
+
+        bindConst x reference)
 
     -- Add non-main functions to the 'Context'.
     zipWithM_ (\fd fn -> bindFn (fnDefName fd) fn) otherFnDefs otherFns
@@ -526,15 +553,26 @@ exprWithBlock = \case
         joinLabel <- LLVM.IRBuilder.block
         LLVM.IRBuilder.phi (fmap snd branches)
 
+unitLit :: LLVM.AST.Constant.Constant
+unitLit = LLVM.AST.Constant.Struct (Just "unit") False mempty
+
+lit :: Lit -> LLVM.AST.Constant.Constant
+lit = \case
+    UnitLit () -> unitLit
+    BoolLit b -> LLVM.AST.Constant.Int 1 (if b then 1 else 0)
+    I64Lit x -> LLVM.AST.Constant.Int 64 x
+    F64Lit x -> LLVM.AST.Constant.Float (LLVM.AST.Float.Double x)
+
 exprWithoutBlock :: ExprWithoutBlock 'Checked -> IRBuilder LLVM.AST.Operand
 exprWithoutBlock = \case
-    LitExpr l -> pure (
-        case l of
-            UnitLit () -> unitLit
-            BoolLit b -> LLVM.IRBuilder.bit (if b then 1 else 0)
-            I64Lit x -> LLVM.IRBuilder.int64 x
-            F64Lit x -> LLVM.IRBuilder.double x)
+    LitExpr l -> pure (LLVM.AST.ConstantOperand (lit l))
     CheckedVarExpr x _ -> findValue x
+    CheckedConstExpr x t -> do
+        p <- findConst x
+        case t of
+            Struct _ -> pure p
+            Enum _ -> LLVM.IRBuilder.bitcast p (LLVM.AST.Type.ptr (reifyType t))
+            _ -> LLVM.IRBuilder.load p 0
     UnaryOpExpr o e -> do
         a <- exprWithoutBlock e
         let instruction =
@@ -604,11 +642,23 @@ exprWithoutBlock = \case
         let a0 = LLVM.AST.ConstantOperand s
         as <- traverse exprWithoutBlock es
         void (LLVM.IRBuilder.call printf [(a, mempty) | a <- a0 : as])
-        pure unitLit
-  where
-    unitLit =
-        LLVM.AST.ConstantOperand
-            (LLVM.AST.Constant.Struct (Just "unit") False mempty)
+        pure (LLVM.AST.ConstantOperand unitLit)
+
+reifyConstInit :: ConstInit 'Checked -> LLVM.AST.Constant.Constant
+reifyConstInit = \case
+    LitInit l -> lit l
+    StructInit n cs ->
+        let n' = reifyName (structName n) in
+
+        let cs' = fmap reifyConstInit (toList cs) in
+
+        LLVM.AST.Constant.Struct (Just n') False cs'
+    CheckedEnumInit n i cs ->
+        let n' = reifyName (enumName n (Just i)) in
+
+        let cs' = tagLit i : fmap reifyConstInit (toList cs) in
+
+        LLVM.AST.Constant.Struct (Just n') False cs'
 
 -- Entry point for blocks in tail position.
 tailBlock :: Block 'Checked -> IRBuilder ()
@@ -662,6 +712,20 @@ tailExprWithoutBlock = \case
             LLVM.IRBuilder.retVoid
         else
             LLVM.IRBuilder.ret result
+    CheckedConstExpr x t -> do
+        p <- findConst x
+        case t of
+            Struct _ -> do
+                copyToReturnArg p (reifyType t)
+                LLVM.IRBuilder.retVoid
+            Enum _ -> do
+                let t' = reifyType t
+                p0 <- LLVM.IRBuilder.bitcast p (LLVM.AST.Type.ptr t')
+                copyToReturnArg p0 t'
+                LLVM.IRBuilder.retVoid
+            _ -> do
+                result <- LLVM.IRBuilder.load p 0
+                LLVM.IRBuilder.ret result
     CheckedCallExpr n es returnType -> do
         fn <- findFn n
         as <- traverse exprWithoutBlock es
