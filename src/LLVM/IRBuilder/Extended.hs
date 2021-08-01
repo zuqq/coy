@@ -3,8 +3,8 @@
 module LLVM.IRBuilder.Extended
     (
     -- * Additions
-      functionWith
-    , privateConstGlobal
+      privateConstGlobal
+    , privateFunction
     , privateGlobalStringPtr
     -- * Reexports
     , module LLVM.IRBuilder
@@ -12,49 +12,53 @@ module LLVM.IRBuilder.Extended
     where
 
 import Data.List (genericLength)
-import Data.Traversable (for)
-import LLVM.AST
-import LLVM.AST.Constant
-import LLVM.AST.Global
-import LLVM.AST.Linkage
-import LLVM.AST.Type
+import LLVM.AST.ParameterAttribute (ParameterAttribute)
 import LLVM.IRBuilder
 
--- | A custom version of 'function' with an additional 'Global' argument for
--- setting function attributes and no support for named arguments.
-functionWith
+import qualified LLVM.AST
+import qualified LLVM.AST.Constant
+import qualified LLVM.AST.Global
+import qualified LLVM.AST.Linkage
+import qualified LLVM.AST.Type
+
+-- | A version of 'function' with private linkage.
+privateFunction
     :: MonadModuleBuilder m
-    => Global
-    -- ^ Function defaults; see 'functionDefaults'.
-    -> Name
+    => LLVM.AST.Name
     -- ^ Function name.
-    -> [Type]
-    -- ^ Argument types.
-    -> Type
+    -> [(LLVM.AST.Type, [ParameterAttribute])]
+    -- ^ Argument metadata.
+    -> LLVM.AST.Type
     -- ^ Return type.
-    -> ([Operand] -> IRBuilderT m ())
+    -> ([LLVM.AST.Operand] -> IRBuilderT m ())
     -- ^ Function body.
-    -> m Operand
-functionWith functionDefaults' n' ats' t' body = do
+    -> m LLVM.AST.Operand
+privateFunction n' metadata t' body = do
+    let ats' = fmap fst metadata
+
     (ans', bs') <- runIRBuilderT emptyIRBuilder (do
-        ans' <- for ats' (const fresh)
-        body (zipWith LocalReference ats' ans')
+        ans' <- traverse (const fresh) metadata
+        body (zipWith LLVM.AST.LocalReference ats' ans')
         pure ans')
 
-    let fnDef' = GlobalDefinition functionDefaults'
-            { name = n'
-            , parameters = (zipWith reifyArgument ans' ats', False)
-            , returnType = t'
-            , basicBlocks = bs'
+    let fnDef' = LLVM.AST.GlobalDefinition LLVM.AST.functionDefaults
+            { LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private
+            , LLVM.AST.Global.returnType = t'
+            , LLVM.AST.Global.name = n'
+            , LLVM.AST.Global.parameters =
+                (zipWith decorateArg ans' metadata, False)
+            , LLVM.AST.Global.basicBlocks = bs'
             }
 
     emitDefn fnDef'
 
-    let fnType' = ptr (FunctionType t' ats' False)
+    let fnType' = LLVM.AST.Type.ptr (LLVM.AST.Type.FunctionType t' ats' False)
 
-    pure (ConstantOperand (GlobalReference fnType' n'))
+    let reference = LLVM.AST.Constant.GlobalReference fnType' n'
+
+    pure (LLVM.AST.ConstantOperand reference)
   where
-    reifyArgument an' at' = Parameter at' an' mempty
+    decorateArg an' (at', as) = LLVM.AST.Parameter at' an' as
 
 -- | A version of 'global' with private linkage.
 privateConstGlobal

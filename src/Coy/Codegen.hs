@@ -14,6 +14,7 @@ import Data.List.Index (ifor, ifor_)
 import Data.Map (Map)
 import Data.Text (Text)
 import Data.Vector (Vector)
+import LLVM.AST.ParameterAttribute (ParameterAttribute)
 import Lens.Micro (Lens', lens)
 import Lens.Micro.Mtl ((%=), (.=), (<<%=), use)
 
@@ -27,9 +28,8 @@ import qualified LLVM.AST
 import qualified LLVM.AST.Constant
 import qualified LLVM.AST.Float
 import qualified LLVM.AST.FloatingPointPredicate
-import qualified LLVM.AST.Global
 import qualified LLVM.AST.IntegerPredicate
-import qualified LLVM.AST.Linkage
+import qualified LLVM.AST.ParameterAttribute
 import qualified LLVM.AST.Type
 import qualified LLVM.IRBuilder.Extended as LLVM.IRBuilder
 
@@ -138,6 +138,13 @@ operandType :: Type 'Checked -> LLVM.AST.Type
 operandType t
     | hasPointerOperandType t = LLVM.AST.Type.ptr (reifyType t)
     | otherwise = reifyType t
+
+returnArgAttrs :: [ParameterAttribute]
+returnArgAttrs =
+    [ LLVM.AST.ParameterAttribute.SRet
+    , LLVM.AST.ParameterAttribute.NoAlias
+    , LLVM.AST.ParameterAttribute.NoCapture
+    ]
 
 freshSymbolName :: IRBuilder LLVM.AST.Name
 freshSymbolName = do
@@ -346,14 +353,16 @@ fnDef :: FnDef 'Checked -> ModuleBuilder LLVM.AST.Operand
 fnDef (FnDef (FnDecl n as t) b) = do
     let n' = reifyName (fnName n)
 
-    let defineFn = LLVM.IRBuilder.functionWith privateLinkage n'
+    let defineFn = LLVM.IRBuilder.privateFunction n'
 
-    let ats' = [operandType at | FnArg _ at <- toList as]
+    let metadata = [(operandType at, mempty) | FnArg _ at <- toList as]
 
     let ans = [an | FnArg an _ <- toList as]
 
     if hasPointerOperandType t then do
         let returnArgType = operandType t
+
+        let metadata' = (returnArgType, returnArgAttrs) : metadata
 
         let body operands = do
                 LLVM.IRBuilder.emitBlockStart "entry"
@@ -361,7 +370,7 @@ fnDef (FnDef (FnDecl n as t) b) = do
                     zipWithM_ bindValue ans (tail operands)
                     tailBlock b)
 
-        defineFn (returnArgType : ats') LLVM.AST.Type.void body
+        defineFn metadata' LLVM.AST.Type.void body
     else do
         let t' = reifyType t
 
@@ -371,12 +380,7 @@ fnDef (FnDef (FnDecl n as t) b) = do
                     zipWithM_ bindValue ans operands
                     tailBlock b)
 
-        defineFn ats' t' body
-  where
-    -- Define non-main functions with private linkage in order to unlock
-    -- further optimizations.
-    privateLinkage = LLVM.AST.functionDefaults
-            {LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private}
+        defineFn metadata t' body
 
 copyTo
     :: LLVM.AST.Operand
