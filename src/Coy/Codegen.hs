@@ -638,7 +638,7 @@ exprWithoutBlock = \case
     CheckedEnumExpr n i ets -> constructEnumVariant n i ets
     PrintLnExpr (CheckedFormatString f) es -> do
         n <- freshSymbolName
-        s <- LLVM.IRBuilder.globalStringPtr (Text.unpack f) n
+        s <- LLVM.IRBuilder.privateGlobalStringPtr (Text.unpack f) n
         let a0 = LLVM.AST.ConstantOperand s
         as <- traverse exprWithoutBlock es
         void (LLVM.IRBuilder.call printf [(a, mempty) | a <- a0 : as])

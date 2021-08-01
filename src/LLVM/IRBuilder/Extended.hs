@@ -4,15 +4,18 @@ module LLVM.IRBuilder.Extended
     (
     -- * Additions
       functionWith
+    , privateGlobalStringPtr
     -- * Reexports
     , module LLVM.IRBuilder
     )
     where
 
+import Data.List (genericLength)
 import Data.Traversable (for)
 import LLVM.AST
 import LLVM.AST.Constant
 import LLVM.AST.Global
+import LLVM.AST.Linkage
 import LLVM.AST.Type
 import LLVM.IRBuilder
 
@@ -51,3 +54,37 @@ functionWith functionDefaults' n' ats' t' body = do
     pure (ConstantOperand (GlobalReference fnType' n'))
   where
     reifyArgument an' at' = Parameter at' an' mempty
+
+-- | A version of 'globalStringPtr' with private linkage.
+privateGlobalStringPtr
+    :: MonadModuleBuilder m
+    => String
+    -> LLVM.AST.Name
+    -> m LLVM.AST.Constant.Constant
+privateGlobalStringPtr s x' = do
+    let char = LLVM.AST.IntegerType 8
+
+    let payload = fmap charLit s <> [charLit '\0']
+
+    let t' = LLVM.AST.ArrayType (genericLength payload) char
+
+    let globalVariableDef' =
+            LLVM.AST.GlobalDefinition LLVM.AST.globalVariableDefaults
+                { LLVM.AST.Global.name = x'
+                , LLVM.AST.Global.type' = t'
+                , LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private
+                , LLVM.AST.Global.isConstant = True
+                , LLVM.AST.Global.initializer =
+                    Just (LLVM.AST.Constant.Array char payload)
+                , LLVM.AST.Global.unnamedAddr = Just LLVM.AST.GlobalAddr
+                }
+
+    emitDefn globalVariableDef'
+
+    let reference = LLVM.AST.Constant.GlobalReference (LLVM.AST.Type.ptr t') x'
+
+    pure (LLVM.AST.Constant.GetElementPtr True reference [index 0, index 0])
+  where
+    charLit = LLVM.AST.Constant.Int 8 . fromIntegral . fromEnum
+
+    index = LLVM.AST.Constant.Int 32
