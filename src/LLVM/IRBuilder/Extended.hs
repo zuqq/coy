@@ -4,6 +4,7 @@ module LLVM.IRBuilder.Extended
     (
     -- * Additions
       functionWith
+    , privateConstGlobal
     , privateGlobalStringPtr
     -- * Reexports
     , module LLVM.IRBuilder
@@ -54,6 +55,29 @@ functionWith functionDefaults' n' ats' t' body = do
     pure (ConstantOperand (GlobalReference fnType' n'))
   where
     reifyArgument an' at' = Parameter at' an' mempty
+
+-- | A version of 'global' with private linkage.
+privateConstGlobal
+    :: MonadModuleBuilder m
+    => LLVM.AST.Name
+    -> LLVM.AST.Type
+    -> LLVM.AST.Constant.Constant
+    -> m LLVM.AST.Operand
+privateConstGlobal x' t' c' = do
+    let globalVariableDef' =
+            LLVM.AST.GlobalDefinition LLVM.AST.globalVariableDefaults
+                { LLVM.AST.Global.name = x'
+                , LLVM.AST.Global.type' = t'
+                , LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private
+                , LLVM.AST.Global.isConstant = True
+                , LLVM.AST.Global.initializer = Just c'
+                }
+
+    emitDefn globalVariableDef'
+
+    let reference = LLVM.AST.Constant.GlobalReference (LLVM.AST.Type.ptr t') x'
+
+    pure (LLVM.AST.ConstantOperand reference)
 
 -- | A version of 'globalStringPtr' with private linkage.
 privateGlobalStringPtr

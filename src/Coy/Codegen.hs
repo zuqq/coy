@@ -289,7 +289,7 @@ codegen (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
 
         let c' = reifyConstInit c
 
-        reference <- LLVM.IRBuilder.global x' t' c'
+        reference <- LLVM.IRBuilder.privateConstGlobal x' t' c'
 
         bindConst x reference)
 
