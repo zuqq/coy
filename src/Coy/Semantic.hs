@@ -286,9 +286,9 @@ findFn n = do
     Map.lookup n fs `orFail` FnNotFound n
 
 findValue :: Text -> Semantic (Type 'Checked)
-findValue n = do
+findValue x = do
     vs <- use values
-    Map.lookup n vs `orFail` ValueNotFound n
+    Map.lookup x vs `orFail` ValueNotFound x
 
 bindValue :: Text -> Type 'Checked -> Semantic ()
 bindValue x t = values %= Map.insert x t
