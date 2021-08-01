@@ -139,6 +139,14 @@ operandType t
     | hasPointerOperandType t = LLVM.AST.Type.ptr (reifyType t)
     | otherwise = reifyType t
 
+operandAttrs :: Type 'Checked -> [ParameterAttribute]
+operandAttrs t
+    | hasPointerOperandType t =
+        [ LLVM.AST.ParameterAttribute.NoAlias
+        , LLVM.AST.ParameterAttribute.NoCapture
+        ]
+    | otherwise = mempty
+
 returnArgAttrs :: [ParameterAttribute]
 returnArgAttrs =
     [ LLVM.AST.ParameterAttribute.SRet
@@ -355,7 +363,7 @@ fnDef (FnDef (FnDecl n as t) b) = do
 
     let defineFn = LLVM.IRBuilder.privateFunction n'
 
-    let metadata = [(operandType at, mempty) | FnArg _ at <- toList as]
+    let metadata = [(operandType at, operandAttrs at) | FnArg _ at <- toList as]
 
     let ans = [an | FnArg an _ <- toList as]
 
