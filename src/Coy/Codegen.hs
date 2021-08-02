@@ -313,6 +313,10 @@ builder (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
     -- Add non-main functions to the 'Context'.
     zipWithM_ (\fd fn -> bindFn (fnDefName fd) fn) otherFnDefs otherFns
 
+    -- Add the main function to the 'Context'.
+    bindFn "main" mainFn
+
+    -- Define non-main functions.
     otherFns <- traverse fnDef otherFnDefs
 
     -- Define the main function.
@@ -324,7 +328,9 @@ builder (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
             LLVM.IRBuilder.emitBlockStart "entry"
             namespaced (tailBlock mainBlock)
 
-    void (LLVM.IRBuilder.function "main" mainArgs mainReturnType mainBody)
+    mainFn <- LLVM.IRBuilder.function "main" mainArgs mainReturnType mainBody
+
+    pure ()
   where
     defineType n t' = LLVM.IRBuilder.typedef (reifyName n) (Just t')
 
