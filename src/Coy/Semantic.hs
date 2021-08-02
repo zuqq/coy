@@ -85,8 +85,10 @@ data SemanticErrorMessage
     | ConstDefTypeMismatch
     -- ^ The declared and observed type of a constant differ.
         (ConstDecl 'Checked)
-        -- ^ Declared type.
+        -- ^ Left-hand side of the constant definition.
         (ConstInit 'Unchecked)
+        -- ^ Right-hand side of the constant definition.
+        (Type 'Checked)
         -- ^ Observed type.
     | StructInitTypeMismatch
     -- ^ The given argument list doesn't conform to the constructor's signature.
@@ -656,7 +658,7 @@ constDef d@(ConstDecl _ constDeclType) c = do
     if constDeclType == t then
         pure (ConstDef d c')
     else
-        throwSemanticError (ConstDefTypeMismatch d c)
+        throwSemanticError (ConstDefTypeMismatch d c t)
 
 constInit
     :: ConstInit 'Unchecked
