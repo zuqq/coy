@@ -4,7 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo #-}
 
-module Coy.Codegen (buildModule, codegen) where
+module Coy.Codegen (codegen) where
 
 import Control.Monad (void, zipWithM_)
 -- We need to use lazy @State@ for @-XRecursiveDo@.
@@ -58,11 +58,13 @@ type ModuleBuilder = LLVM.IRBuilder.ModuleBuilderT (State Context)
 
 type IRBuilder = LLVM.IRBuilder.IRBuilderT ModuleBuilder
 
-buildModule :: String -> ModuleBuilder a -> LLVM.AST.Module
-buildModule n builder =
-    evalState (LLVM.IRBuilder.buildModuleT n' builder) (Context mempty mempty mempty 0)
+codegen :: String -> Module 'Checked -> LLVM.AST.Module
+codegen n checked =
+    evalState (LLVM.IRBuilder.buildModuleT n' (builder checked)) context
   where
     n' = ByteString.Short.toShort (ByteString.Char8.pack n)
+
+    context = Context mempty mempty mempty 0
 
 bindConst :: Text -> LLVM.AST.Operand -> ModuleBuilder ()
 bindConst x t = consts %= Map.insert x t
@@ -269,10 +271,10 @@ computeEnumSizes typeDefs = enumSizes
         Struct n -> structSizes Map.! n
         Enum n -> enumSizes Map.! n
 
-codegen :: Module 'Checked -> ModuleBuilder ()
+builder :: Module 'Checked -> ModuleBuilder ()
 -- Here and elsewhere the @-XRecursiveDo@ extension allows me to use forward
 -- references without too much trouble.
-codegen (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
+builder (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
     -- Define the unit type.
     void (defineType "unit" (LLVM.AST.StructureType False mempty))
 

@@ -38,6 +38,6 @@ main = do
                 Right checked -> do
                     let n = takeBaseName filePath
 
-                    let m = buildModule n (codegen checked)
+                    let m = codegen n checked
 
                     Text.Lazy.IO.writeFile (n <.> "ll") (LLVM.Pretty.ppllvm m)
