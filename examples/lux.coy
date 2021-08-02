@@ -290,6 +290,26 @@ enum MaybeHit {
     None(), Some(Hit)
 }
 
+fn closer_maybe_hit(maybe_hit0: MaybeHit, maybe_hit1: MaybeHit) -> MaybeHit {
+    match maybe_hit0 {
+        MaybeHit::None()   => maybe_hit1,
+        MaybeHit::Some(h0) => {
+            let Hit(t0, _, _, _) = h0;
+            match maybe_hit1 {
+                MaybeHit::None()   => maybe_hit0,
+                MaybeHit::Some(h1) => {
+                    let Hit(t1, _, _, _) = h1;
+                    if t0 <= t1 {
+                        maybe_hit0
+                    } else {
+                        maybe_hit1
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn ground_time(ray: Ray) -> MaybeF64 {
     let Ray(p, v) = ray;
     let Vector(_, y0, _) = p;
@@ -337,23 +357,7 @@ fn hit(ray: Ray) -> MaybeHit {
     let maybe_sphere_hit = sphere_hit(SPHERE, SPHERE_MATERIAL, ray);
     let maybe_ground_hit = ground_hit(GROUND_MATERIAL, ray);
 
-    match maybe_sphere_hit {
-        MaybeHit::None()   => maybe_ground_hit,
-        MaybeHit::Some(h0) => {
-            let Hit(t0, _, _, _) = h0;
-            match maybe_ground_hit {
-                MaybeHit::None()   => maybe_sphere_hit,
-                MaybeHit::Some(h1) => {
-                    let Hit(t1, _, _, _) = h1;
-                    if t0 <= t1 {
-                        maybe_sphere_hit
-                    } else {
-                        maybe_ground_hit
-                    }
-                }
-            }
-        }
-    }
+    closer_maybe_hit(maybe_sphere_hit, maybe_ground_hit)
 }
 
 fn sky(v: Vector) -> Color {
