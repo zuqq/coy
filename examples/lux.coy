@@ -315,18 +315,10 @@ fn ground_time(ray: Ray) -> MaybeF64 {
     let Vector(_, y0, _) = p;
     let Vector(_, dy, _) = v;
 
-    if y0 >= 0.0 {
-        if dy < 0.0 {
-            safe_time(y0 / (-dy))
-        } else {
-            MaybeF64::None()
-        }
+    if y0 >= 0.0 && dy < 0.0 || y0 <= 0.0 && dy > 0.0 {
+        safe_time(y0 / (-dy))
     } else {
-        if dy > 0.0 {
-            safe_time(y0 / (-dy))
-        } else {
-            MaybeF64::None()
-        }
+        MaybeF64::None()
     }
 }
 
