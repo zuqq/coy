@@ -305,9 +305,14 @@ constDef = do
     semicolon
     pure (ConstDef (ConstDecl x t) c)
   where
-    constInit = litInit <|> structInit <|> enumInit
+    constInit = litInit <|> negLitInit <|> structInit <|> enumInit
 
     litInit = fmap LitInit lit
+
+    negLitInit = do
+       Parser.char '-' *> space
+       l <- lit
+       pure (UncheckedNegLitInit l)
 
     structInit = do
         n <- structName

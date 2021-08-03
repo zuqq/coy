@@ -312,6 +312,12 @@ data ConstDecl (u :: Status) = ConstDecl Text (Type u)
 data ConstInit (u :: Status) where
     LitInit :: Lit -> ConstInit u
 
+    UncheckedNegLitInit :: Lit -> ConstInit 'Unchecked
+
+    NegI64LitInit :: Integer -> ConstInit 'Checked
+
+    NegF64LitInit :: Double -> ConstInit 'Checked
+
     StructInit :: Text -> Vector (ConstInit u) -> ConstInit u
 
     UncheckedEnumInit

@@ -90,6 +90,7 @@ data SemanticErrorMessage
         -- ^ Right-hand side of the constant definition.
         (Type 'Checked)
         -- ^ Observed type.
+    | NegLitInitTypeMismatch Lit (Type 'Checked)
     | StructInitTypeMismatch
     -- ^ The given argument list doesn't conform to the constructor's signature.
         Text
@@ -665,6 +666,11 @@ constInit
     -> Semantic (ConstInit 'Checked, Type 'Checked)
 constInit = \case
     LitInit l -> pure (LitInit l, litType l)
+    UncheckedNegLitInit l ->
+        case l of
+            I64Lit x -> pure (NegI64LitInit x, I64)
+            F64Lit x -> pure (NegF64LitInit x, F64)
+            _ -> throwSemanticError (NegLitInitTypeMismatch l (litType l))
     StructInit n cs -> do
         fieldTypes <- findStruct n
         cts <- traverse constInit cs

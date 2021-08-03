@@ -667,6 +667,8 @@ exprWithoutBlock = \case
 reifyConstInit :: ConstInit 'Checked -> LLVM.AST.Constant.Constant
 reifyConstInit = \case
     LitInit l -> lit l
+    NegI64LitInit x -> lit (I64Lit (-x))
+    NegF64LitInit x -> lit (F64Lit (-x))
     StructInit n cs ->
         let n' = reifyName (structName n) in
 
