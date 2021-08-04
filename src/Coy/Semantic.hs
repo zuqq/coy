@@ -673,17 +673,17 @@ constInit = \case
             _ -> throwSemanticError (NegLitInitTypeMismatch l (litType l))
     StructInit n cs -> do
         fieldTypes <- findStruct n
-        cts <- traverse constInit cs
-        let ts = fmap snd cts
+        cts' <- traverse constInit cs
+        let ts = fmap snd cts'
         if ts == fieldTypes then
-            pure (StructInit n (fmap fst cts), Struct n)
+            pure (StructInit n (fmap fst cts'), Struct n)
         else
             throwSemanticError (StructInitTypeMismatch n cs ts)
     UncheckedEnumInit n v cs -> do
         (i, fieldTypes) <- findEnumVariant n v
-        cts <- traverse constInit cs
-        let ts = fmap snd cts
+        cts' <- traverse constInit cs
+        let ts = fmap snd cts'
         if ts == fieldTypes then
-            pure (CheckedEnumInit n i (fmap fst cts), Enum n)
+            pure (CheckedEnumInit n i (fmap fst cts'), Enum n)
         else
             throwSemanticError (EnumInitTypeMismatch n v cs ts)
