@@ -297,11 +297,14 @@ data Predicate
     deriving Show
 
 data FormatString (u :: Status) where
-    UncheckedFormatString :: [Text] -> FormatString 'Unchecked
+    UncheckedFormatString :: [FormatStringChunk] -> FormatString 'Unchecked
 
     CheckedFormatString :: Text -> FormatString 'Checked
 
 deriving instance Show (FormatString u)
+
+data FormatStringChunk = Hole | NonHole Text
+    deriving (Eq, Ord, Show)
 
 data ConstDef (u :: Status) = ConstDef (ConstDecl u) (ConstInit u)
     deriving Show

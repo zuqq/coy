@@ -613,33 +613,32 @@ exprWithoutBlock = \case
                 F64 -> pure "%f"
                 _ -> abort
 
-        -- Because holes and non-holes alternate, there is at most one leading
-        -- chunk that is not a hole.
-        let step (s, "{}" : cs') t = do
-                s' <- formatSpecifier t
-                pure (s <> s', cs')
-            step (s, c : "{}" : cs') t = do
-                s' <- formatSpecifier t
-                pure (s <> Text.Lazy.Builder.fromText c <> s', cs')
-            -- This covers the case where there are not enough holes for the
-            -- given argument list.
-            step _ _ = abort
+        let step (builder, chunks) t =
+                case chunks' of
+                    Hole : chunks'' -> do
+                        s <- formatSpecifier t
+                        pure (builder <> prefix <> s, chunks'')
+                    _ -> abort
+              where
+                (ns, chunks') = span (/= Hole) chunks
+
+                prefix =
+                    mconcat [Text.Lazy.Builder.fromText x | NonHole x <- ns]
 
         (builder, leftovers) <- foldM step (mempty, cs) ts
 
-        if "{}" `elem` leftovers then
+        if Hole `elem` leftovers then
             abort
         else do
-            -- At this point there should be at most one chunk left; @foldMap@
-            -- conveniently handles both cases.
-            let result =
-                    Text.Lazy.toStrict
-                        (Text.Lazy.Builder.toLazyText (
-                                builder
-                            <>  foldMap Text.Lazy.Builder.fromText leftovers
-                            <>  "\n"))
+            let suffix =
+                    mconcat
+                        [Text.Lazy.Builder.fromText x | NonHole x <- leftovers]
 
-            let f' = CheckedFormatString result
+            let f' =
+                    CheckedFormatString
+                        (Text.Lazy.toStrict
+                            (Text.Lazy.Builder.toLazyText
+                                (builder <> suffix <> "\n")))
 
             let es' = fmap fst ets'
 

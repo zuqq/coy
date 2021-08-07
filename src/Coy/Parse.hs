@@ -255,24 +255,26 @@ exprWithoutBlock = buildExpressionParser operators simpleExpr
     printLnExpr = do
         void "println"
         Parser.char '!' *> space
-        (cs, es) <- parenthesized (do
-            cs <- formatString
+        (f, es) <- parenthesized (do
+            f <- formatString
             es <- many (comma *> exprWithoutBlock)
-            pure (cs, es))
-        pure (PrintLnExpr (UncheckedFormatString cs) es)
+            pure (f, es))
+        pure (PrintLnExpr f es)
       where
         formatString = do
             void (Parser.char '"')
             cs <- many formatStringChunk
             void (Parser.char '"')
             space
-            pure cs
+            pure (UncheckedFormatString cs)
 
-        formatStringChunk = "{}" <|> formatStringChunkNonHole
+        formatStringChunk = hole <|> nonHole
 
-        formatStringChunkNonHole =
+        hole = "{}" $> Hole
+
+        nonHole = fmap NonHole (
             Parser.takeWhile1
-                (\c -> isAscii c && isPrint c && c /= '"' && c /= '{')
+                (\c -> isAscii c && isPrint c && c /= '"' && c /= '{'))
 
 lit :: Parser Lit
 lit = unitLit <|> boolLit <|> f64Lit <|> i64Lit
