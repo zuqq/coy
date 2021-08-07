@@ -412,7 +412,6 @@ resolveModuleSigNames (ModuleSig tds cds fds) = do
         t' <- findType t
         pure (FnDecl n as' t'))
 
-    -- Check that the type definitions are acyclic.
     let number =
             (Map.fromList [(typeDefName td, i) | (i, td) <- indexed tds] Map.!)
 
@@ -425,6 +424,7 @@ resolveModuleSigNames (ModuleSig tds cds fds) = do
 
     let labelWithUncheckedTypeDef = (Map.fromList (indexed tds) Map.!)
 
+    -- Check that the type definitions are acyclic.
     case topSort graph of
         Left typeCycle ->
             throwEmptySemanticError
@@ -507,7 +507,6 @@ exprWithBlock = \case
                     (throwSemanticError
                         (MatchArmEnumVariantMismatch n actualEnumVariants))
 
-                -- Recurse into each match arm.
                 iats' <- for as (\(UncheckedMatchArm _ v xs e) -> do
                     (i, fieldTypes) <- findEnumVariant n v
                     if Vector.length xs == Vector.length fieldTypes then
@@ -526,7 +525,6 @@ exprWithBlock = \case
                         -- Sort the checked match arms by variant index.
                         let as' = fmap (view _2) (sortOn (view _1) iats')
 
-                        -- Assemble the checked match expression.
                         pure (CheckedMatchExpr e0' n as', resultType)
                     _ ->
                         throwSemanticError
@@ -615,9 +613,8 @@ exprWithoutBlock = \case
                 F64 -> pure "%f"
                 _ -> abort
 
-        -- Fold over the list of argument types in order to fill in the holes in
-        -- the format string. Because holes and non-holes alternate, there is at
-        -- most one leading chunk that is not a hole.
+        -- Because holes and non-holes alternate, there is at most one leading
+        -- chunk that is not a hole.
         let step (s, "{}" : cs') t = do
                 s' <- formatSpecifier t
                 pure (s <> s', cs')
@@ -630,13 +627,11 @@ exprWithoutBlock = \case
 
         (builder, leftovers) <- foldM step (mempty, cs) ts
 
-        -- Check that there are no holes left.
         if "{}" `elem` leftovers then
             abort
         else do
             -- At this point there should be at most one chunk left; @foldMap@
-            -- conveniently handles both cases. We also make sure to add the
-            -- trailing line feed character here.
+            -- conveniently handles both cases.
             let result =
                     Text.Lazy.toStrict
                         (Text.Lazy.Builder.toLazyText (

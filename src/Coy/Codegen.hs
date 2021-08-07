@@ -278,6 +278,7 @@ builder (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
     -- Define the unit type.
     void (defineType "unit" (LLVM.AST.StructureType False mempty))
 
+    -- Define structs and enums.
     for_ typeDefs (\case
         StructDef n0 ts -> structDef n0 ts
         EnumDef n0 vs -> enumDef n0 vs)
@@ -294,6 +295,7 @@ builder (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
     void (
         LLVM.IRBuilder.externVarArgs printfName printfArgTypes printfReturnType)
 
+    -- Define constants.
     for_ constDefs (\(ConstDef (ConstDecl x t) c) -> do
         let x' = reifyName x
 
@@ -355,7 +357,7 @@ builder (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
 
         void (defineType n t')
 
-        -- Recurse into the variants.
+        -- Define the variant types.
         ifor_ vs (\i (EnumVariant _ ts) -> do
             let vn = enumName n0 (Just i)
 
