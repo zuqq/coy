@@ -233,13 +233,19 @@ data SemanticErrorMessage
         -- ^ Arguments.
         (Vector (Type 'Checked))
         -- ^ Types of the arguments.
-    | PrintLnExprTypeMismatch
-    -- ^ The argument list contains non-printable expressions or doesn't match
-    -- the shape of the format string.
+    | PrintLnExprArityMismatch
+    -- ^ The number of holes in the format string is not equal to the length of
+    -- the argument list.
         (FormatString 'Unchecked)
         -- ^ The format string.
         [ExprWithoutBlock 'Unchecked]
-        -- ^ Arguments.
+        -- ^ The argument list.
+    | PrintLnExprTypeMismatch
+    -- ^ The argument list contains non-printable expressions.
+        (FormatString 'Unchecked)
+        -- ^ The format string.
+        [ExprWithoutBlock 'Unchecked]
+        -- ^ The argument list.
         [Type 'Checked]
         -- ^ Types of the arguments.
     deriving Show
@@ -604,14 +610,14 @@ exprWithoutBlock = \case
 
         let ts = fmap snd ets'
 
-        -- Work around the monomorphism restriction with an explicit type.
-        let abort :: Semantic a
-            abort = throwSemanticError (PrintLnExprTypeMismatch f es ts)
-
         let formatSpecifier = \case
                 I64 -> pure "%lld"
                 F64 -> pure "%f"
-                _ -> abort
+                _ -> throwSemanticError (PrintLnExprTypeMismatch f es ts)
+
+        -- Work around the monomorphism restriction with an explicit type.
+        let abort :: Semantic a
+            abort = throwSemanticError (PrintLnExprArityMismatch f es)
 
         let step (builder, chunks) t =
                 case chunks' of
