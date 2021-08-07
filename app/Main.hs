@@ -3,7 +3,7 @@
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.FilePath ((<.>), takeBaseName)
-import System.IO (hPutStr, stderr)
+import System.IO (IOMode (WriteMode), hPutStr, stderr, withFile)
 
 import qualified Data.Text.IO as Text.IO
 import qualified Data.Text.Lazy.IO as Text.Lazy.IO
@@ -40,4 +40,5 @@ main = do
 
                     let m = codegen n checked
 
-                    Text.Lazy.IO.writeFile (n <.> "ll") (LLVM.Pretty.ppllvm m)
+                    withFile (n <.> "ll") WriteMode (\handle ->
+                        Text.Lazy.IO.hPutStrLn handle (LLVM.Pretty.ppllvm m))
