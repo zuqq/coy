@@ -296,21 +296,7 @@ builder (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
         LLVM.IRBuilder.externVarArgs printfName printfArgTypes printfReturnType)
 
     -- Define constants.
-    for_ constDefs (\(ConstDef (ConstDecl x t) c) -> do
-        let x' = reifyName x
-
-        let t' =
-                case c of
-                    -- Enum constants have to be defined to have the variant
-                    -- type; they are cast to the base type at each use site.
-                    CheckedEnumInit n i _ -> reifyEnum n (Just i)
-                    _ -> reifyType t
-
-        let c' = reifyConstInit c
-
-        reference <- LLVM.IRBuilder.privateConstGlobal x' t' c'
-
-        bindConst x reference)
+    traverse_ constDef constDefs
 
     -- Add non-main functions to the 'Context'.
     zipWithM_ (\fd fn -> bindFn (fnDefName fd) fn) otherFnDefs otherFns
@@ -366,6 +352,22 @@ builder (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
             let vt' = LLVM.AST.StructureType False (tagType : ts')
 
             defineType vn vt')
+
+    constDef (ConstDef (ConstDecl x t) c) = do
+        let x' = reifyName x
+
+        let t' =
+                case c of
+                    -- Enum constants have to be defined to have the variant
+                    -- type; they are cast to the base type at each use site.
+                    CheckedEnumInit n i _ -> reifyEnum n (Just i)
+                    _ -> reifyType t
+
+        let c' = reifyConstInit c
+
+        reference <- LLVM.IRBuilder.privateConstGlobal x' t' c'
+
+        bindConst x reference
 
 fnDef :: FnDef 'Checked -> ModuleBuilder LLVM.AST.Operand
 fnDef (FnDef (FnDecl n as t) b) = do
