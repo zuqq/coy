@@ -283,10 +283,8 @@ builder (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
         StructDef n0 ts -> structDef n0 ts
         EnumDef n0 vs -> enumDef n0 vs)
 
-    -- Declare intrinsic functions.
-    for_ intrinsicFns (\(n, n', ats', t') -> do
-        reference <- LLVM.IRBuilder.extern n' ats' t'
-        bindFn n reference)
+    -- Define constants.
+    traverse_ constDef constDefs
 
     -- Declare @memcpy@.
     void (LLVM.IRBuilder.extern memcpyName memcpyArgTypes memcpyReturnType)
@@ -295,8 +293,10 @@ builder (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
     void (
         LLVM.IRBuilder.externVarArgs printfName printfArgTypes printfReturnType)
 
-    -- Define constants.
-    traverse_ constDef constDefs
+    -- Declare intrinsic functions.
+    for_ intrinsicFns (\(n, n', ats', t') -> do
+        reference <- LLVM.IRBuilder.extern n' ats' t'
+        bindFn n reference)
 
     -- Add non-main functions to the 'Context'.
     zipWithM_ (\fd fn -> bindFn (fnDefName fd) fn) otherFnDefs otherFns
