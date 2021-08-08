@@ -615,16 +615,12 @@ exprWithoutBlock = \case
                 F64 -> pure "%f"
                 _ -> throwSemanticError (PrintLnExprTypeMismatch f es ts)
 
-        -- Work around the monomorphism restriction with an explicit type.
-        let abort :: Semantic a
-            abort = throwSemanticError (PrintLnExprArityMismatch f es)
-
         let step (builder, chunks) t =
                 case chunks' of
                     Hole : chunks'' -> do
                         s <- formatSpecifier t
                         pure (builder <> prefix <> s, chunks'')
-                    _ -> abort
+                    _ -> throwSemanticError (PrintLnExprArityMismatch f es)
               where
                 (ns, chunks') = span (/= Hole) chunks
 
@@ -634,7 +630,7 @@ exprWithoutBlock = \case
         (builder, leftovers) <- foldM step (mempty, cs) ts
 
         if Hole `elem` leftovers then
-            abort
+            throwSemanticError (PrintLnExprArityMismatch f es)
         else do
             let suffix =
                     mconcat
