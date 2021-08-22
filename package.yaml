@@ -8,17 +8,17 @@ extra-source-files:
 
 dependencies:
 - algebraic-graphs
-- attoparsec
-- attoparsec-expr
 - base >= 4.7 && < 5
 - bytestring
 - containers
 - ilist
 - llvm-hs-pretty
 - llvm-hs-pure
+- megaparsec
 - microlens
 - microlens-mtl
 - mtl
+- parser-combinators
 - text
 - transformers
 - vector

@@ -17,27 +17,33 @@ module Coy.Parse
     where
 
 import Control.Applicative ((<|>), many)
-import Data.Attoparsec.Expr (
-    Assoc (AssocLeft, AssocNone),
-    Operator (Infix, Postfix, Prefix),
-    buildExpressionParser)
-import Data.Attoparsec.Text (Parser)
+import Control.Monad.Combinators.Expr (
+    Operator (InfixL, InfixN, Postfix, Prefix), makeExprParser)
 import Data.Bifunctor (bimap)
 import Data.Char (
-    isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isDigit, isPrint, isSpace)
+    isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isDigit, isPrint)
 import Data.Functor (($>), void)
-import Lens.Micro (_1, _2, _3, over)
 import Data.Monoid (Endo (Endo, appEndo))
 import Data.Text (Text)
+import Data.Void (Void)
+import Lens.Micro (_1, _2, _3, over)
+import Text.Megaparsec (ParseErrorBundle, Parsec)
+import Text.Megaparsec.Error (errorBundlePretty)
 
-import qualified Data.Attoparsec.Text as Parser
 import qualified Data.Text as Text
 import qualified Data.Vector as Vector
+import qualified Text.Megaparsec as Parser
+import qualified Text.Megaparsec.Char as Parser
+import qualified Text.Megaparsec.Char.Lexer
 
 import Coy.Syntax
 
-newtype ParseError = ParseError String
-    deriving Show
+type Parser = Parsec Void Text
+
+newtype ParseError = ParseError (ParseErrorBundle Text Void)
+
+instance Show ParseError where
+    show (ParseError e) = errorBundlePretty e
 
 cons :: a -> Endo [a]
 cons = Endo . (:)
@@ -45,14 +51,14 @@ cons = Endo . (:)
 run :: Monoid m => Endo m -> m
 run e = appEndo e mempty
 
-parse :: Text -> Either ParseError (Module 'Unchecked)
-parse s = do
-    let result = Parser.parseOnly p s
+parse :: String -> Text -> Either ParseError (Module 'Unchecked)
+parse n s = do
+    let result = Parser.parse p n s
     (typeDefs, constDefs, fnDefs) <- bimap ParseError runAll result
     pure (UncheckedModule typeDefs constDefs fnDefs)
   where
     -- Builds a triple of difference lists.
-    p = space *> go mempty <* Parser.endOfInput
+    p = space *> go mempty <* Parser.eof
 
     -- Corresponds to @many@.
     go e = go1 e <|> go2 e <|> go3 e <|> pure e
@@ -119,7 +125,7 @@ fnArg = do
 block :: Parser (Block 'Unchecked)
 block =
     withinBraces (do
-        ss <- many statement
+        ss <- many (Parser.try statement)
         e <- expr
         pure (Block (Vector.fromList ss) e))
 
@@ -180,53 +186,16 @@ matchArm = do
     pure (UncheckedMatchArm n v (Vector.fromList xs) e)
 
 exprWithoutBlock :: Parser (ExprWithoutBlock 'Unchecked)
-exprWithoutBlock = buildExpressionParser operators simpleExpr
+exprWithoutBlock = makeExprParser term ops
   where
-    operators =
-        [
-            [Prefix (symbolic '-' $> UnaryOpExpr Neg)],
-            [Prefix (symbolic '!' $> UnaryOpExpr Not)],
-            [Postfix (fmap (UnaryOpExpr . As) (symbol "as" *> typeName))],
-            [
-                Infix (symbolic '*' $> BinaryOpExpr Mul) AssocLeft,
-                Infix (symbolic '/' $> BinaryOpExpr Div) AssocLeft,
-                Infix (symbolic '%' $> BinaryOpExpr Rem) AssocLeft
-            ],
-            [
-                Infix (symbolic '+' $> BinaryOpExpr Add) AssocLeft,
-                Infix (symbolic '-' $> BinaryOpExpr Sub) AssocLeft
-            ],
-            [
-                Infix (symbol "<<" $> BinaryOpExpr Shl) AssocLeft,
-                Infix (symbol ">>" $> BinaryOpExpr Shr) AssocLeft
-            ],
-            [Infix (symbolic '&' $> BinaryOpExpr BitAnd) AssocLeft],
-            [Infix (symbolic '^' $> BinaryOpExpr BitXor) AssocLeft],
-            [Infix (symbolic '|' $> BinaryOpExpr BitOr) AssocLeft],
-            [
-                Infix (symbol "==" $> BinaryOpExpr (Cmp Eq)) AssocNone,
-                Infix (symbol "!=" $> BinaryOpExpr (Cmp Ne)) AssocNone,
-                Infix (symbol "<=" $> BinaryOpExpr (Cmp Le)) AssocNone,
-                Infix (symbol ">=" $> BinaryOpExpr (Cmp Ge)) AssocNone,
-                Infix (symbolic '<' $> BinaryOpExpr (Cmp Lt)) AssocNone,
-                Infix (symbolic '>' $> BinaryOpExpr (Cmp Gt)) AssocNone
-            ],
-            [Infix (symbol "&&" $> BinaryOpExpr And) AssocLeft],
-            [Infix (symbol "||" $> BinaryOpExpr Or) AssocLeft]
-        ]
-
-    simpleExpr =
-            parenthesized exprWithoutBlock
-        <|> litExpr
-        -- Here @callExpr@ and @printLnExpr@ need to precede @varExpr@ because
-        -- they parse suffixes of the latter.
-        <|> callExpr
-        <|> printLnExpr
+    term =
+            Parser.try callExpr
+        <|> Parser.try printLnExpr
         <|> varExpr
-        -- Similary, @enumExpr@ needs to precede @structExpr@; both of them
-        -- need to precede @constExpr@.
-        <|> enumExpr
-        <|> structExpr
+        <|> Parser.try litExpr
+        <|> parenthesized exprWithoutBlock
+        <|> Parser.try enumExpr
+        <|> Parser.try structExpr
         <|> constExpr
 
     litExpr = fmap LitExpr lit
@@ -273,11 +242,58 @@ exprWithoutBlock = buildExpressionParser operators simpleExpr
         hole = "{}" $> Hole
 
         nonHole = fmap NonHole (
-            Parser.takeWhile1
+            Parser.takeWhile1P (Just "non-hole character")
                 (\c -> isAscii c && isPrint c && c /= '"' && c /= '{'))
 
+    ops =
+        [
+            [Prefix (symbolic '-' $> UnaryOpExpr Neg)],
+            [Prefix (symbolic '!' $> UnaryOpExpr Not)],
+            [Postfix (fmap (UnaryOpExpr . As) (symbol "as" *> typeName))],
+            [
+                InfixL (symbolic '*' $> BinaryOpExpr Mul),
+                InfixL (symbolic '/' $> BinaryOpExpr Div),
+                InfixL (symbolic '%' $> BinaryOpExpr Rem)
+            ],
+            [
+                InfixL (symbolic '+' $> BinaryOpExpr Add),
+                InfixL (symbolic '-' $> BinaryOpExpr Sub)
+            ],
+            [
+                InfixL (symbol "<<" $> BinaryOpExpr Shl),
+                InfixL (symbol ">>" $> BinaryOpExpr Shr)
+            ],
+            [InfixL (Parser.try bitAnd $> BinaryOpExpr BitAnd)],
+            [InfixL (symbolic '^' $> BinaryOpExpr BitXor)],
+            [InfixL (Parser.try bitOr $> BinaryOpExpr BitOr)],
+            [
+                InfixN (symbol "==" $> BinaryOpExpr (Cmp Eq)),
+                InfixN (symbol "!=" $> BinaryOpExpr (Cmp Ne)),
+                InfixN (symbol "<=" $> BinaryOpExpr (Cmp Le)),
+                InfixN (symbol ">=" $> BinaryOpExpr (Cmp Ge)),
+                InfixN (symbolic '<' $> BinaryOpExpr (Cmp Lt)),
+                InfixN (symbolic '>' $> BinaryOpExpr (Cmp Gt))
+            ],
+            [InfixL (symbol "&&" $> BinaryOpExpr And)],
+            [InfixL (symbol "||" $> BinaryOpExpr Or)]
+        ]
+      where
+        bitAnd =
+                Parser.char '&'
+            <*  Parser.notFollowedBy (Parser.char '&')
+            <*  space
+
+        bitOr =
+                Parser.char '|'
+            <*  Parser.notFollowedBy (Parser.char '|')
+            <*  space
+
+-- This definition ties down all the type variables.
+decimal :: Parser Integer
+decimal = Text.Megaparsec.Char.Lexer.decimal
+
 lit :: Parser Lit
-lit = unitLit <|> boolLit <|> f64Lit <|> i64Lit
+lit = unitLit <|> boolLit <|> Parser.try f64Lit <|> i64Lit
   where
     unitLit = fmap UnitLit ("()" $> ()) <* space
 
@@ -289,12 +305,10 @@ lit = unitLit <|> boolLit <|> f64Lit <|> i64Lit
         (s, c) <- Parser.match (Parser.option 0 decimal) <* space
         pure (F64Lit (encodeDecimalFloat n c (-Text.length s)))
       where
-        decimal = Parser.decimal @Integer
-
         encodeDecimalFloat n c e =
             fromIntegral n + fromIntegral c * 10 ** fromIntegral e
 
-    i64Lit = fmap I64Lit Parser.decimal <* space
+    i64Lit = fmap I64Lit decimal <* space
 
 constDef :: Parser (ConstDef 'Unchecked)
 constDef = do
@@ -307,7 +321,7 @@ constDef = do
     semicolon
     pure (ConstDef (ConstDecl x t) c)
   where
-    constInit = litInit <|> negLitInit <|> structInit <|> enumInit
+    constInit = litInit <|> negLitInit <|> Parser.try structInit <|> enumInit
 
     litInit = fmap LitInit lit
 
@@ -328,18 +342,21 @@ constDef = do
         cs <- parenthesized (commaSeparated constInit)
         pure (UncheckedEnumInit n v (Vector.fromList cs))
 
+isEndOfLine :: Char -> Bool
+isEndOfLine c = c == '\n' || c == '\r'
+
 comment :: Parser ()
 comment = do
     void "//"
-    Parser.skipWhile (not . Parser.isEndOfLine)
-    Parser.skipSpace
+    void (Parser.takeWhileP (Just "any non-EOL character") (not . isEndOfLine))
+    Parser.space
 
 space :: Parser ()
-space = Parser.skipSpace *> Parser.skipMany comment
+space = Parser.space *> Parser.skipMany comment
 
 space1 :: Parser ()
 space1 = do
-    void (Parser.takeWhile1 isSpace) <|> comment
+    Parser.space1 <|> comment
     Parser.skipMany comment
 
 symbol :: Text -> Parser Text
@@ -377,24 +394,34 @@ withinBraces p = do
     Parser.char '}' *> space
     pure result
 
+identifierContinuation :: Parser Text
+identifierContinuation =
+    Parser.takeWhileP (Just "identifier continuation character")
+        (\c -> isAscii c && (isAlphaNum c || c == '_'))
+
 lowerIdentifier :: Parser Text
 lowerIdentifier = do
     a <- Parser.satisfy (\c -> isAsciiLower c || c == '_')
-    s <- Parser.takeWhile (\c -> isAscii c && (isAlphaNum c || c == '_'))
+    s <- identifierContinuation
     space
     pure (Text.cons a s)
 
 upperIdentifier :: Parser Text
 upperIdentifier = do
     a <- Parser.satisfy isAsciiUpper
-    s <- Parser.takeWhile (\c -> isAscii c && (isAlphaNum c || c == '_'))
+    s <- identifierContinuation
     space
     pure (Text.cons a s)
+
+constNameContinuation :: Parser Text
+constNameContinuation =
+    Parser.takeWhileP (Just "constant name continuation character")
+        (\c -> isAsciiUpper c || isDigit c || c == '_')
 
 constName :: Parser Text
 constName = do
     a <- Parser.satisfy (\c -> isAsciiUpper c || c == '_')
-    s <- Parser.takeWhile (\c -> isAsciiUpper c || isDigit c || c == '_')
+    s <- constNameContinuation
     space
     pure (Text.cons a s)
 
