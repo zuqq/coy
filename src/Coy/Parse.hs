@@ -63,7 +63,7 @@ parse n s = do
     -- Corresponds to @many@.
     go e = go1 e <|> go2 e <|> go3 e <|> pure e
 
-    -- Corresponds to different incarnations of @some@.
+    -- Correspond to different incarnations of @some@.
     go1 e = do
         td <- typeDef
         go (over _1 (<> cons td) e)
@@ -76,6 +76,7 @@ parse n s = do
         fd <- fnDef
         go (over _3 (<> cons fd) e)
 
+    -- Converts the difference lists to ordinary lists.
     runAll = over _1 run . over _2 run . over _3 run
 
 typeDef :: Parser (TypeDef 'Unchecked)
