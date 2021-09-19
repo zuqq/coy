@@ -30,33 +30,23 @@ shouldNotParse filePath = do
                 Left _ -> mempty
                 Right _ -> expectationFailure "Unexpected successful parse."
 
+isCoySourceFile :: FilePath -> Bool
+isCoySourceFile fileName = takeExtension fileName == ".coy"
+
+getCoySourceFileNames :: FilePath -> IO [FilePath]
+getCoySourceFileNames directory =
+    fmap (filter isCoySourceFile) (listDirectory directory)
+
+forDirectory :: FilePath -> (FilePath -> Expectation) -> Spec
+forDirectory directory f = do
+    fileNames <- runIO (getCoySourceFileNames directory)
+    describe directory (
+        for_ fileNames (\fileName -> it fileName (f (directory </> fileName))))
+
 spec :: Spec
 spec = do
-    let examplesDirectory = "examples"
+    forDirectory "examples" shouldParse
 
-    examplesFileNames <- runIO (getCoySourceFileNames examplesDirectory)
+    forDirectory "test/golden" shouldParse
 
-    describe examplesDirectory (
-        for_ examplesFileNames (\fileName ->
-            it fileName (shouldParse (examplesDirectory </> fileName))))
-
-    let goldenDirectory = "test/golden"
-
-    goldenFileNames <- runIO (getCoySourceFileNames goldenDirectory)
-
-    describe goldenDirectory (
-        for_ goldenFileNames (\fileName ->
-            it fileName (shouldParse (goldenDirectory </> fileName))))
-
-    let badDirectory = "test/parse/bad"
-
-    badFileNames <- runIO (getCoySourceFileNames badDirectory)
-
-    describe badDirectory (
-        for_ badFileNames (\fileName ->
-            it fileName (shouldNotParse (badDirectory </> fileName))))
-  where
-    isCoySourceFile fileName = takeExtension fileName == ".coy"
-
-    getCoySourceFileNames folder =
-        fmap (filter isCoySourceFile) (listDirectory folder)
+    forDirectory "test/parse/bad" shouldNotParse
