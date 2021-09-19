@@ -1,0 +1,9 @@
+fn main() -> () {
+    if// This is a legal comment!
+    false {
+        // This is a more normal comment.
+        println!("Failure")
+    } else {
+        println!("Success")
+    }
+}

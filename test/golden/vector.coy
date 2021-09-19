@@ -1,0 +1,14 @@
+struct Vector(f64, f64, f64);
+
+fn dot_product(v: Vector, w: Vector) -> f64 {
+    let Vector(vx, vy, vz) = v;
+    let Vector(wx, wy, wz) = w;
+    vx * wx + vy * wy + vz * wz
+}
+
+fn main() -> () {
+    let v = Vector(1.0, 0.0, 0.0);
+    let w = Vector(0.0, 2.0, 0.0);
+    println!("v dot w equals {}", dot_product(v, w));
+    println!("w dot w equals {}", dot_product(w, w))
+}

@@ -1,0 +1,22 @@
+struct RandomF64(f64, i64);
+
+fn next(u: i64) -> RandomF64 {
+    // https://stackoverflow.com/a/17035915
+    let v = (u >> 1) ^ (-(u & 1) & 2149580803);
+    let x = ((v >> 8) as f64) / 16777216.0;
+    RandomF64(x, v)
+}
+
+fn main_loop(u: i64, i: i64) -> () {
+    if i <= 0 {
+        ()
+    } else {
+        let RandomF64(x, v) = next(u);
+        println!("{}", x);
+        main_loop(v, i - 1)
+    }
+}
+
+fn main() -> () {
+    main_loop(1, 100)
+}

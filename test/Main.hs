@@ -1,2 +1,1 @@
-main :: IO ()
-main = mempty
+{-# OPTIONS_GHC -F -pgmF hspec-discover #-}

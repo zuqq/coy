@@ -1,0 +1,15 @@
+enum MaybeF64 {
+    None(), Some(f64)
+}
+
+fn from_maybe_f64(default: f64, a: MaybeF64) -> f64 {
+    match a {
+        MaybeF64::None() => default,
+        MaybeF64::Some(x) => x
+    }
+}
+
+fn main() -> () {
+    println!("{}", from_maybe_f64(0.1, MaybeF64::None()));
+    println!("{}", from_maybe_f64(0.1, MaybeF64::Some(-0.1)))
+}

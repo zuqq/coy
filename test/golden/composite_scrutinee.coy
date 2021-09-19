@@ -1,0 +1,8 @@
+fn main() -> () {
+    let x = 0;
+    if x + 1 > 0 {
+        println!("Success")
+    } else {
+        println!("Failure")
+    }
+}
