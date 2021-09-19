@@ -1,5 +1,4 @@
 fn main() -> () {
     println!("{}", 12.5 as i64);
-
     println!("{}", 1250 as f64)
 }
