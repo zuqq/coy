@@ -50,3 +50,5 @@ spec = do
     forDirectory "test/golden" shouldParse
 
     forDirectory "test/parse/bad" shouldNotParse
+
+    forDirectory "test/parse/good" shouldParse
