@@ -32,6 +32,14 @@ shouldNotParse filePath = do
 
 spec :: Spec
 spec = do
+    let examplesDirectory = "examples"
+
+    examplesFileNames <- runIO (getCoySourceFileNames examplesDirectory)
+
+    describe examplesDirectory (
+        for_ examplesFileNames (\fileName ->
+            it fileName (shouldParse (examplesDirectory </> fileName))))
+
     let goldenDirectory = "test/golden"
 
     goldenFileNames <- runIO (getCoySourceFileNames goldenDirectory)
