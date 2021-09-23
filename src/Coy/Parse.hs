@@ -190,11 +190,11 @@ exprWithoutBlock :: Parser (ExprWithoutBlock 'Unchecked)
 exprWithoutBlock = makeExprParser term ops
   where
     term =
-            Parser.try callExpr
+            Parser.try litExpr
+        <|> parenthesized exprWithoutBlock
+        <|> Parser.try callExpr
         <|> Parser.try printLnExpr
         <|> varExpr
-        <|> Parser.try litExpr
-        <|> parenthesized exprWithoutBlock
         <|> Parser.try enumExpr
         <|> Parser.try structExpr
         <|> constExpr
@@ -298,7 +298,15 @@ lit = unitLit <|> boolLit <|> Parser.try f64Lit <|> i64Lit
   where
     unitLit = fmap UnitLit ("()" $> ()) <* space
 
-    boolLit = fmap BoolLit ("true" $> True <|> "false" $> False) <* space
+    boolLit = fmap BoolLit (true $> True <|> false $> False) <* space
+      where
+        true =
+                "true"
+            <*  Parser.notFollowedBy (Parser.satisfy isIdentifierContinuation)
+
+        false =
+                "false"
+            <*  Parser.notFollowedBy (Parser.satisfy isIdentifierContinuation)
 
     f64Lit = do
         n <- decimal
@@ -395,10 +403,13 @@ withinBraces p = do
     Parser.char '}' *> space
     pure result
 
+isIdentifierContinuation :: Char -> Bool
+isIdentifierContinuation c = isAscii c && (isAlphaNum c || c == '_')
+
 identifierContinuation :: Parser Text
 identifierContinuation =
     Parser.takeWhileP (Just "identifier continuation character")
-        (\c -> isAscii c && (isAlphaNum c || c == '_'))
+        isIdentifierContinuation
 
 lowerIdentifier :: Parser Text
 lowerIdentifier = do
