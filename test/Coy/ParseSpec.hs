@@ -47,8 +47,8 @@ spec :: Spec
 spec = do
     forDirectory "examples" shouldParse
 
-    forDirectory "test/golden" shouldParse
+    forDirectory "golden/data" shouldParse
 
-    forDirectory "test/parse/bad" shouldNotParse
+    forDirectory "test/data/parse/bad" shouldNotParse
 
-    forDirectory "test/parse/good" shouldParse
+    forDirectory "test/data/parse/good" shouldParse

@@ -58,3 +58,18 @@ tests:
     - directory
     - filepath
     - hspec
+
+  coy-golden:
+    main: Main.hs
+    source-dirs: golden
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - coy
+    - directory
+    - filepath
+    - hspec
+    - temporary
+    - typed-process
