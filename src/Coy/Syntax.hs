@@ -32,9 +32,6 @@ data Module (u :: Status) where
 
 deriving instance Show (Module u)
 
-data ModuleSig (u :: Status) = ModuleSig [TypeDef u] [ConstDecl u] [FnDecl u]
-    deriving Show
-
 data TypeDef (u :: Status)
     = StructDef Text (Vector (Type u))
     | EnumDef Text [EnumVariant u]

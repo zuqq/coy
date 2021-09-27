@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -322,9 +323,7 @@ semantic (UncheckedModule typeDefs constDefs fnDefs) = do
 
     let fnDecls = [d | FnDef d _ <- fnDefs]
 
-    let moduleSig = ModuleSig typeDefs constDecls fnDecls
-
-    ModuleSig typeDefs' constDecls' fnDecls' <- resolveModuleSigNames moduleSig
+    (typeDefs', constDecls', fnDecls') <- resolveNames (typeDefs, constDecls, fnDecls)
 
     let ss = Map.fromList [(n, ts) | StructDef n ts <- typeDefs']
 
@@ -361,11 +360,13 @@ semantic (UncheckedModule typeDefs constDefs fnDefs) = do
     enumVariants vs =
         Map.fromList [(v, (i, ts)) | (i, EnumVariant v ts) <- indexed vs]
 
+type ModuleSig (u :: Status) = ([TypeDef u], [ConstDecl u], [FnDecl u])
+
 -- Preserves the order of the definitions or declarations in each group.
-resolveModuleSigNames
+resolveNames
     :: ModuleSig 'Unchecked
     -> Either SemanticError (ModuleSig 'Checked)
-resolveModuleSigNames (ModuleSig tds cds fds) = do
+resolveNames (tds, cds, fds) = do
     let structNames = Set.fromList [n | StructDef n _ <- tds]
 
     let enumNames = Set.fromList [n | EnumDef n _ <- tds]
@@ -435,7 +436,7 @@ resolveModuleSigNames (ModuleSig tds cds fds) = do
         Left typeCycle ->
             throwEmptySemanticError
                 (TypeCycle (fmap labelWithUncheckedTypeDef typeCycle))
-        Right _ -> pure (ModuleSig tds' cds' fds')
+        Right _ -> pure (tds', cds', fds')
 
 fnDef :: FnDecl 'Checked -> Block 'Unchecked -> Semantic (FnDef 'Checked)
 fnDef d@(FnDecl n as returnType) b = do
