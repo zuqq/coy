@@ -274,7 +274,7 @@ computeEnumSizes typeDefs = enumSizes
 builder :: Module 'Checked -> ModuleBuilder ()
 -- Here and elsewhere the @-XRecursiveDo@ extension allows me to use forward
 -- references without too much trouble.
-builder (CheckedModule typeDefs constDefs (FnDef _ mainBlock) otherFnDefs) = mdo
+builder (CheckedModule typeDefs constDefs otherFnDefs (FnDef _ mainBlock)) = mdo
     -- Define the unit type.
     void (defineType "unit" (LLVM.AST.StructureType False mempty))
 

@@ -24,10 +24,10 @@ data Module (u :: Status) where
         -- ^ Struct and enum definitions.
         -> [ConstDef 'Checked]
         -- ^ Definitions of global constants.
-        -> FnDef 'Checked
-        -- ^ Definition of the main function.
         -> [FnDef 'Checked]
         -- ^ Definitions of the other functions.
+        -> FnDef 'Checked
+        -- ^ Definition of the main function.
         -> Module 'Checked
 
 deriving instance Show (Module u)

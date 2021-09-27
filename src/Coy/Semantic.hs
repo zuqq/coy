@@ -352,7 +352,7 @@ semantic (UncheckedModule typeDefs constDefs fnDefs) = do
         [mainFnDef'@(FnDef (FnDecl _ as t) _)]
             | Vector.null as, t == Unit ->
                 pure (
-                    CheckedModule typeDefs' constDefs' mainFnDef' otherFnDefs')
+                    CheckedModule typeDefs' constDefs' otherFnDefs' mainFnDef')
             | otherwise ->
                 throwEmptySemanticError (MainFnDefTypeMismatch mainFnDef')
         _ -> throwEmptySemanticError MainFnDefMissing
