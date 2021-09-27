@@ -2,7 +2,7 @@ import Data.Foldable (for_)
 import System.Directory (listDirectory, makeAbsolute)
 import System.FilePath ((<.>), (</>), dropExtension, replaceExtension, takeExtension, takeFileName)
 import System.IO.Temp (withTempDirectory)
-import System.Process.Typed (proc, readProcess, runProcess_, setWorkingDir)
+import System.Process.Typed (nullStream, proc, readProcess, runProcess_, setStderr, setWorkingDir)
 import Test.Hspec (describe, it, shouldBe)
 import Test.Hspec.Runner (defaultConfig, evaluateSummary, runSpec)
 
@@ -28,7 +28,9 @@ main = do
 
                     let resultFilePath = tempDirectory </> dropExtension fileName <.> ".ll"
 
-                    runProcess_ (proc "clang" ["-O3", "-o", executableFilePath, resultFilePath])
+                    runProcess_ (
+                        setStderr nullStream (
+                            proc "clang" ["-O3", "-o", executableFilePath, resultFilePath]))
 
                     (_, actual, _) <- readProcess (proc executableFilePath mempty)
 
