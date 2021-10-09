@@ -322,10 +322,10 @@ builder (CheckedModule typeDefs constDefs otherFnDefs (FnDef _ mainBlock)) = mdo
   where
     defineType n t' = LLVM.IRBuilder.typedef (reifyName n) (Just t')
 
-    structDef n0 ts = do
-        let n = structName n0
+    structDef n0 ts =
+        let n = structName n0 in
 
-        let t' = LLVM.AST.StructureType False (fmap reifyType (toList ts))
+        let t' = LLVM.AST.StructureType False (fmap reifyType (toList ts)) in
 
         void (defineType n t')
 
@@ -344,12 +344,12 @@ builder (CheckedModule typeDefs constDefs otherFnDefs (FnDef _ mainBlock)) = mdo
         void (defineType n t')
 
         -- Define the variant types.
-        ifor_ vs (\i (EnumVariant _ ts) -> do
-            let vn = enumName n0 (Just i)
+        ifor_ vs (\i (EnumVariant _ ts) ->
+            let vn = enumName n0 (Just i) in
 
-            let ts' = fmap reifyType (toList ts)
+            let ts' = fmap reifyType (toList ts) in
 
-            let vt' = LLVM.AST.StructureType False (tagType : ts')
+            let vt' = LLVM.AST.StructureType False (tagType : ts') in
 
             defineType vn vt')
 
@@ -370,35 +370,35 @@ builder (CheckedModule typeDefs constDefs otherFnDefs (FnDef _ mainBlock)) = mdo
         bindConst x reference
 
 fnDef :: FnDef 'Checked -> ModuleBuilder LLVM.AST.Operand
-fnDef (FnDef (FnDecl n as t) b) = do
-    let n' = reifyName (fnName n)
+fnDef (FnDef (FnDecl n as t) b) =
+    let n' = reifyName (fnName n) in
 
-    let defineFn = LLVM.IRBuilder.privateFunction n'
+    let defineFn = LLVM.IRBuilder.privateFunction n' in
 
-    let metadata = [(operandType at, operandAttrs at) | FnArg _ at <- toList as]
+    let metadata = [(operandType at, operandAttrs at) | FnArg _ at <- toList as] in
 
-    let ans = [an | FnArg an _ <- toList as]
+    let ans = [an | FnArg an _ <- toList as] in
 
-    if hasPointerOperandType t then do
-        let returnArgType = operandType t
+    if hasPointerOperandType t then
+        let returnArgType = operandType t in
 
-        let metadata' = (returnArgType, returnArgAttrs) : metadata
+        let metadata' = (returnArgType, returnArgAttrs) : metadata in
 
         let body operands = do
                 LLVM.IRBuilder.emitBlockStart "entry"
                 namespaced (do
                     zipWithM_ bindValue ans (tail operands)
-                    tailBlock b)
+                    tailBlock b) in
 
         defineFn metadata' LLVM.AST.Type.void body
-    else do
-        let t' = reifyType t
+    else
+        let t' = reifyType t in
 
         let body operands = do
                 LLVM.IRBuilder.emitBlockStart "entry"
                 namespaced (do
                     zipWithM_ bindValue ans operands
-                    tailBlock b)
+                    tailBlock b) in
 
         defineFn metadata t' body
 
@@ -448,7 +448,7 @@ constructStruct n ets = do
     Vector.iforM_ ets (\i (e, at) -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral i)]
         a <- exprWithoutBlock e
-        if hasPointerOperandType at then do
+        if hasPointerOperandType at then
             copyTo q a (reifyType at)
         else
             LLVM.IRBuilder.store q 0 a)
@@ -470,7 +470,7 @@ constructEnumVariant n i ets = do
     Vector.iforM_ ets (\k (e, at) -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral k + 1)]
         a <- exprWithoutBlock e
-        if hasPointerOperandType at then do
+        if hasPointerOperandType at then
             copyTo q a (reifyType at)
         else
             LLVM.IRBuilder.store q 0 a)

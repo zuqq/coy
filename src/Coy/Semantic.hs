@@ -528,9 +528,9 @@ exprWithBlock = \case
                 -- Check that the types of the match arms are all the same.
                 let resultTypes = fmap (view _3) iats'
                 case nubOrd resultTypes of
-                    [resultType] -> do
+                    [resultType] ->
                         -- Sort the checked match arms by variant index.
-                        let as' = fmap (view _2) (sortOn (view _1) iats')
+                        let as' = fmap (view _2) (sortOn (view _1) iats') in
 
                         pure (CheckedMatchExpr e0' n as', resultType)
                     _ ->
@@ -632,18 +632,18 @@ exprWithoutBlock = \case
 
         if Hole `elem` leftovers then
             throwSemanticError (PrintLnExprArityMismatch f es)
-        else do
+        else
             let suffix =
                     mconcat
-                        [Text.Lazy.Builder.fromText x | NonHole x <- leftovers]
+                        [Text.Lazy.Builder.fromText x | NonHole x <- leftovers] in
 
             let f' =
                     CheckedFormatString
                         (Text.Lazy.toStrict
                             (Text.Lazy.Builder.toLazyText
-                                (builder <> suffix <> "\n")))
+                                (builder <> suffix <> "\n"))) in
 
-            let es' = fmap fst ets'
+            let es' = fmap fst ets' in
 
             pure (PrintLnExpr f' es', Unit)
 
