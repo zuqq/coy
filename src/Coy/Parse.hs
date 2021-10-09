@@ -52,8 +52,7 @@ run e = appEndo e mempty
 
 parse :: String -> Text -> Either ParseError (Module 'Unchecked)
 parse n s = do
-    let result = Parser.parse p n s
-    (typeDefs, constDefs, fnDefs) <- bimap ParseError runAll result
+    (typeDefs, constDefs, fnDefs) <- bimap ParseError runAll (Parser.parse p n s)
     pure (UncheckedModule typeDefs constDefs fnDefs)
   where
     -- Builds a triple of difference lists.
