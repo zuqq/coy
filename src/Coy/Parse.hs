@@ -44,18 +44,17 @@ newtype ParseError = ParseError (ParseErrorBundle Text Void)
 instance Show ParseError where
     show (ParseError e) = errorBundlePretty e
 
-cons :: a -> Endo [a]
-cons = Endo . (:)
-
-run :: Monoid m => Endo m -> m
-run e = appEndo e mempty
-
 parse :: String -> Text -> Either ParseError (Module 'Unchecked)
 parse n s = do
     (typeDefs, constDefs, fnDefs) <- bimap ParseError runAll (Parser.parse p n s)
     pure (UncheckedModule typeDefs constDefs fnDefs)
   where
-    -- Builds a triple of difference lists.
+    cons = Endo . (:)
+
+    run e = appEndo e mempty
+
+    runAll = over _1 run . over _2 run . over _3 run
+
     p = space *> go mempty <* Parser.eof
 
     -- Corresponds to @many@.
@@ -73,9 +72,6 @@ parse n s = do
     go3 e = do
         fd <- fnDef
         go (over _3 (<> cons fd) e)
-
-    -- Converts the difference lists to ordinary lists.
-    runAll = over _1 run . over _2 run . over _3 run
 
 typeDef :: Parser (TypeDef 'Unchecked)
 typeDef = structDef <|> enumDef
