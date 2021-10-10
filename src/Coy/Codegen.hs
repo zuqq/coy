@@ -291,8 +291,7 @@ builder (CheckedModule typeDefs constDefs symbolTable otherFnDefs (FnDef _ mainB
     void (LLVM.IRBuilder.extern memcpyName memcpyArgTypes memcpyReturnType)
 
     -- Declare @printf@.
-    void (
-        LLVM.IRBuilder.externVarArgs printfName printfArgTypes printfReturnType)
+    void (LLVM.IRBuilder.externVarArgs printfName printfArgTypes printfReturnType)
 
     -- Declare intrinsic functions.
     for_ intrinsicFns (\(n, n', ats', t') -> do
