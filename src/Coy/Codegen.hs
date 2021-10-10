@@ -16,7 +16,7 @@ import Data.Text (Text)
 import Data.Vector (Vector)
 import LLVM.AST.ParameterAttribute (ParameterAttribute)
 import Lens.Micro (Lens', lens)
-import Lens.Micro.Mtl ((%=), (.=), (<<%=), use)
+import Lens.Micro.Mtl ((%=), (.=), (<~), use)
 
 import qualified Data.ByteString.Char8 as ByteString.Char8
 import qualified Data.ByteString.Short as ByteString.Short
@@ -37,22 +37,22 @@ import Coy.Syntax
 
 data Context = Context
     { _consts :: Map Text LLVM.AST.Operand
+    , _symbols :: Vector LLVM.AST.Operand
     , _fns :: Map Text LLVM.AST.Operand
     , _values :: Map Text LLVM.AST.Operand
-    , _symbolCounter :: Int
     }
 
 consts :: Lens' Context (Map Text LLVM.AST.Operand)
 consts = lens _consts (\s cs -> s {_consts = cs})
+
+symbols :: Lens' Context (Vector LLVM.AST.Operand)
+symbols = lens _symbols (\s ss -> s {_symbols = ss})
 
 fns :: Lens' Context (Map Text LLVM.AST.Operand)
 fns = lens _fns (\s fs -> s {_fns = fs})
 
 values :: Lens' Context (Map Text LLVM.AST.Operand)
 values = lens _values (\s vs -> s {_values = vs})
-
-symbolCounter :: Lens' Context Int
-symbolCounter = lens _symbolCounter (\s i -> s {_symbolCounter = i})
 
 type ModuleBuilder = LLVM.IRBuilder.ModuleBuilderT (State Context)
 
@@ -64,13 +64,16 @@ codegen n checked =
   where
     n' = ByteString.Short.toShort (ByteString.Char8.pack n)
 
-    context = Context mempty mempty mempty 0
+    context = Context mempty mempty mempty mempty
 
 bindConst :: Text -> LLVM.AST.Operand -> ModuleBuilder ()
 bindConst x t = consts %= Map.insert x t
 
 findConst :: Text -> IRBuilder LLVM.AST.Operand
 findConst x = fmap (Map.! x) (use consts)
+
+findSymbol :: Int -> IRBuilder LLVM.AST.Operand
+findSymbol i = fmap (Vector.! i) (use symbols)
 
 bindFn :: Text -> LLVM.AST.Operand -> ModuleBuilder ()
 bindFn n t = fns %= Map.insert n t
@@ -155,11 +158,6 @@ returnArgAttrs =
     , LLVM.AST.ParameterAttribute.NoAlias
     , LLVM.AST.ParameterAttribute.NoCapture
     ]
-
-freshSymbolName :: IRBuilder LLVM.AST.Name
-freshSymbolName = do
-    i <- symbolCounter <<%= (+ 1)
-    pure (reifyName (symbolName i))
 
 globalReference
     :: LLVM.AST.Type
@@ -274,7 +272,10 @@ computeEnumSizes typeDefs = enumSizes
 builder :: Module 'Checked -> ModuleBuilder ()
 -- Here and elsewhere the @-XRecursiveDo@ extension allows me to use forward
 -- references without too much trouble.
-builder (CheckedModule typeDefs constDefs otherFnDefs (FnDef _ mainBlock)) = mdo
+builder (CheckedModule typeDefs constDefs symbolTable otherFnDefs (FnDef _ mainBlock)) = mdo
+    -- Define symbols.
+    symbols <~ Vector.imapM symbol symbolTable
+
     -- Define the unit type.
     void (defineType "unit" (LLVM.AST.StructureType False mempty))
 
@@ -320,6 +321,15 @@ builder (CheckedModule typeDefs constDefs otherFnDefs (FnDef _ mainBlock)) = mdo
 
     pure ()
   where
+    symbol i s = do
+        let n' = reifyName (symbolName i)
+
+        let s' = Text.unpack s
+
+        p <- LLVM.IRBuilder.privateGlobalStringPtr s' n'
+
+        pure (LLVM.AST.ConstantOperand p)
+
     defineType n t' = LLVM.IRBuilder.typedef (reifyName n) (Just t')
 
     structDef n0 ts =
@@ -660,10 +670,8 @@ exprWithoutBlock = \case
             LLVM.IRBuilder.call fn as'
     CheckedStructExpr n ets -> constructStruct n ets
     CheckedEnumExpr n i ets -> constructEnumVariant n i ets
-    PrintLnExpr (CheckedFormatString f) es -> do
-        n <- freshSymbolName
-        s <- LLVM.IRBuilder.privateGlobalStringPtr (Text.unpack f) n
-        let a0 = LLVM.AST.ConstantOperand s
+    PrintLnExpr (CheckedFormatString i) es -> do
+        a0 <- findSymbol i
         as <- traverse exprWithoutBlock es
         void (LLVM.IRBuilder.call printf [(a, mempty) | a <- a0 : as])
         pure (LLVM.AST.ConstantOperand unitLit)

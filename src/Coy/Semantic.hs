@@ -19,7 +19,7 @@ import Algebra.Graph.ToGraph (topSort)
 import Control.Monad (foldM, when, zipWithM)
 import Control.Monad.Error.Class (MonadError (throwError))
 import Control.Monad.Trans.Except (Except, runExcept)
-import Control.Monad.Trans.State.Strict (StateT, evalStateT)
+import Control.Monad.Trans.State.Strict (StateT, evalStateT, runStateT)
 import Data.Bifunctor (first)
 import Data.Containers.ListUtils (nubOrd)
 import Data.Foldable (toList, traverse_)
@@ -45,6 +45,7 @@ data Context = Context
     { _structs :: Map Text (Vector (Type 'Checked))
     , _enums :: Map Text (Map Text (Int, Vector (Type 'Checked)))
     , _consts :: Map Text (Type 'Checked)
+    , _symbols :: Map Text Int
     , _fns :: Map Text (Vector (Type 'Checked), Type 'Checked)
     , _values :: Map Text (Type 'Checked)
     }
@@ -59,18 +60,14 @@ enums = lens _enums (\c es -> c {_enums = es})
 consts :: Lens' Context (Map Text (Type 'Checked))
 consts = lens _consts (\c cs -> c {_consts = cs})
 
+symbols :: Lens' Context (Map Text Int)
+symbols = lens _symbols (\c ss -> c {_symbols = ss})
+
 fns :: Lens' Context (Map Text (Vector (Type 'Checked), Type 'Checked))
 fns = lens _fns (\c fs -> c {_fns = fs})
 
 values :: Lens' Context (Map Text (Type 'Checked))
 values = lens _values (\c vs -> c {_values = vs})
-
-instance Semigroup Context where
-    Context ss0 es0 cs0 fs0 vs0 <> Context ss1 es1 cs1 fs1 vs1 =
-        Context (ss0 <> ss1) (es0 <> es1) (cs0 <> cs1) (fs0 <> fs1) (vs0 <> vs1)
-
-instance Monoid Context where
-    mempty = Context mempty mempty mempty mempty mempty
 
 data SemanticErrorMessage
     = RedefinedTypes [TypeDef 'Unchecked]
@@ -256,11 +253,15 @@ data SemanticError = SemanticError Context SemanticErrorMessage
 
 type Semantic = StateT Context (Except SemanticError)
 
-runSemanticWith :: Context -> Semantic a -> Either SemanticError a
-runSemanticWith c = runExcept . flip evalStateT c
+evalSemantic :: Semantic a -> Context -> Either SemanticError a
+evalSemantic c = runExcept . evalStateT c
+
+runSemantic :: Semantic a -> Context -> Either SemanticError (a, Context)
+runSemantic c = runExcept . runStateT c
 
 throwEmptySemanticError :: SemanticErrorMessage -> Either SemanticError a
-throwEmptySemanticError e = throwError (SemanticError mempty e)
+throwEmptySemanticError e =
+    throwError (SemanticError (Context mempty mempty mempty mempty mempty mempty) e)
 
 throwSemanticError :: SemanticErrorMessage -> Semantic a
 throwSemanticError e = do
@@ -289,6 +290,13 @@ findConst :: Text -> Semantic (Type 'Checked)
 findConst n = do
     cs <- use consts
     Map.lookup n cs `orFail` ConstNotFound n
+
+bindSymbol :: Text -> Semantic Int
+bindSymbol s = do
+    ss <- use symbols
+    let i = Map.findWithDefault (Map.size ss) s ss
+    symbols .= Map.insert s i ss
+    pure i
 
 findFn :: Text -> Semantic (Vector (Type 'Checked), Type 'Checked)
 findFn n = do
@@ -331,19 +339,24 @@ semantic (UncheckedModule typeDefs constDefs fnDefs) = do
 
     let cs = Map.fromList [(n, t) | ConstDecl n t <- constDecls']
 
+    let symbolTable = mempty
+
     let fs = Map.fromList (
                 intrinsicFns
             <>  [(n, (fmap fnArgType as, t)) | FnDecl n as t <- fnDecls'])
 
     let vs = mempty
 
-    let context = Context ss es cs fs vs
+    let context = Context ss es cs symbolTable fs vs
 
-    constDefs' <- runSemanticWith context (
-        zipWithM constDef constDecls' [c | ConstDef _ c <- constDefs])
+    constDefs' <- evalSemantic (
+        zipWithM constDef constDecls' [c | ConstDef _ c <- constDefs]) context
 
-    fnDefs' <- runSemanticWith context (
-        zipWithM fnDef fnDecls' [b | FnDef _ b <- fnDefs])
+    (fnDefs', context') <- runSemantic (
+        zipWithM fnDef fnDecls' [b | FnDef _ b <- fnDefs]) context
+
+    let symbolTable' =
+            Vector.fromList (fmap fst (sortOn snd (Map.toList (view symbols context'))))
 
     let (mainFnDefs', otherFnDefs') =
             partition (\fd -> fnDefName fd == "main") fnDefs'
@@ -351,8 +364,7 @@ semantic (UncheckedModule typeDefs constDefs fnDefs) = do
     case mainFnDefs' of
         [mainFnDef'@(FnDef (FnDecl _ as t) _)]
             | Vector.null as, t == Unit ->
-                pure (
-                    CheckedModule typeDefs' constDefs' otherFnDefs' mainFnDef')
+                pure (CheckedModule typeDefs' constDefs' symbolTable' otherFnDefs' mainFnDef')
             | otherwise ->
                 throwEmptySemanticError (MainFnDefTypeMismatch mainFnDef')
         _ -> throwEmptySemanticError MainFnDefMissing
@@ -632,20 +644,16 @@ exprWithoutBlock = \case
 
         if Hole `elem` leftovers then
             throwSemanticError (PrintLnExprArityMismatch f es)
-        else
-            let suffix =
-                    mconcat
-                        [Text.Lazy.Builder.fromText x | NonHole x <- leftovers] in
+        else do
+            let suffix = mconcat [Text.Lazy.Builder.fromText x | NonHole x <- leftovers]
 
-            let f' =
-                    CheckedFormatString
-                        (Text.Lazy.toStrict
-                            (Text.Lazy.Builder.toLazyText
-                                (builder <> suffix <> "\n"))) in
+            let f' = Text.Lazy.toStrict (Text.Lazy.Builder.toLazyText (builder <> suffix <> "\n"))
 
-            let es' = fmap fst ets' in
+            i <- bindSymbol f'
 
-            pure (PrintLnExpr f' es', Unit)
+            let es' = fmap fst ets'
+
+            pure (PrintLnExpr (CheckedFormatString i) es', Unit)
 
 constDef
     :: ConstDecl 'Checked

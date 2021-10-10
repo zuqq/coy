@@ -24,6 +24,8 @@ data Module (u :: Status) where
         -- ^ Struct and enum definitions.
         -> [ConstDef 'Checked]
         -- ^ Definitions of global constants.
+        -> Vector Text
+        -- ^ Symbol table.
         -> [FnDef 'Checked]
         -- ^ Definitions of the other functions.
         -> FnDef 'Checked
@@ -296,7 +298,7 @@ data Predicate
 data FormatString (u :: Status) where
     UncheckedFormatString :: [FormatStringChunk] -> FormatString 'Unchecked
 
-    CheckedFormatString :: Text -> FormatString 'Checked
+    CheckedFormatString :: Int -> FormatString 'Checked
 
 deriving instance Show (FormatString u)
 
