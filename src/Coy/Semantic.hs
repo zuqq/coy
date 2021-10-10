@@ -8,7 +8,6 @@ module Coy.Semantic
     (
     -- * Error type
       SemanticError (..)
-    , SemanticErrorMessage (..)
     -- * Entry point
     , semantic
     )
@@ -69,7 +68,7 @@ fns = lens _fns (\c fs -> c {_fns = fs})
 values :: Lens' Context (Map Text (Type 'Checked))
 values = lens _values (\c vs -> c {_values = vs})
 
-data SemanticErrorMessage
+data SemanticError
     = RedefinedTypes [TypeDef 'Unchecked]
     | RedefinedFns [FnDecl 'Unchecked]
     | StructOrEnumNotFound Text
@@ -248,9 +247,6 @@ data SemanticErrorMessage
         -- ^ Types of the arguments.
     deriving Show
 
-data SemanticError = SemanticError Context SemanticErrorMessage
-    deriving Show
-
 type Semantic = StateT Context (Except SemanticError)
 
 evalSemantic :: Semantic a -> Context -> Either SemanticError a
@@ -259,17 +255,8 @@ evalSemantic c = runExcept . evalStateT c
 runSemantic :: Semantic a -> Context -> Either SemanticError (a, Context)
 runSemantic c = runExcept . runStateT c
 
-throwEmptySemanticError :: SemanticErrorMessage -> Either SemanticError a
-throwEmptySemanticError e =
-    throwError (SemanticError (Context mempty mempty mempty mempty mempty mempty) e)
-
-throwSemanticError :: SemanticErrorMessage -> Semantic a
-throwSemanticError e = do
-    c <- use id
-    throwError (SemanticError c e)
-
-orFail :: Maybe a -> SemanticErrorMessage -> Semantic a
-orFail x e = maybe (throwSemanticError e) pure x
+orFail :: Maybe a -> SemanticError -> Semantic a
+orFail x e = maybe (throwError e) pure x
 
 findStruct :: Text -> Semantic (Vector (Type 'Checked))
 findStruct n = do
@@ -366,8 +353,8 @@ semantic (UncheckedModule typeDefs constDefs fnDefs) = do
             | Vector.null as, t == Unit ->
                 pure (CheckedModule typeDefs' constDefs' symbolTable' otherFnDefs' mainFnDef')
             | otherwise ->
-                throwEmptySemanticError (MainFnDefTypeMismatch mainFnDef')
-        _ -> throwEmptySemanticError MainFnDefMissing
+                throwError (MainFnDefTypeMismatch mainFnDef')
+        _ -> throwError MainFnDefMissing
   where
     enumVariants vs =
         Map.fromList [(v, (i, ts)) | (i, EnumVariant v ts) <- indexed vs]
@@ -390,12 +377,12 @@ resolveNames (tds, cds, fds) = do
     -- Check that no type was redefined.
     when
         (Set.size typeNames /= length tds)
-        (throwEmptySemanticError (RedefinedTypes tds))
+        (throwError (RedefinedTypes tds))
 
     -- Check that no function was redefined.
     when
         (Set.size fnNames /= length fds)
-        (throwEmptySemanticError (RedefinedFns fds))
+        (throwError (RedefinedFns fds))
 
     let findType = \case
             Unit -> pure Unit
@@ -405,7 +392,7 @@ resolveNames (tds, cds, fds) = do
             StructOrEnum n
                 | n `Set.member` structNames -> pure (Struct n)
                 | n `Set.member` enumNames -> pure (Enum n)
-                | otherwise -> throwEmptySemanticError (StructOrEnumNotFound n)
+                | otherwise -> throwError (StructOrEnumNotFound n)
 
     -- Name resolution for the type definitions.
     tds' <- for tds (\case
@@ -446,7 +433,7 @@ resolveNames (tds, cds, fds) = do
     -- Check that the type definitions are acyclic.
     case topSort graph of
         Left typeCycle ->
-            throwEmptySemanticError
+            throwError
                 (TypeCycle (fmap labelWithUncheckedTypeDef typeCycle))
         Right _ -> pure (tds', cds', fds')
 
@@ -458,7 +445,7 @@ fnDef d@(FnDecl n as returnType) b = do
     if returnType == resultType then
         pure (FnDef d b')
     else
-        throwSemanticError (FnDefTypeMismatch n returnType resultType)
+        throwError (FnDefTypeMismatch n returnType resultType)
   where
     bindFnArg (FnArg an at) = bindValue an at
 
@@ -478,11 +465,11 @@ statement = \case
         fieldTypes <- findStruct n
         when
             (Vector.length xs /= Vector.length fieldTypes)
-            (throwSemanticError (StructPatternArityMismatch n xs))
+            (throwError (StructPatternArityMismatch n xs))
         (e', t) <- expr e
         when
             (Struct n /= t)
-            (throwSemanticError (StructPatternTypeMismatch n e t))
+            (throwError (StructPatternTypeMismatch n e t))
         let xts = Vector.zip xs fieldTypes
         traverse_ (uncurry bindValue) xts
         pure (LetStatement (CheckedStructPattern xts) e')
@@ -502,10 +489,10 @@ exprWithBlock = \case
     BlockExpr b -> fmap (first BlockExpr) (block b)
     IfExpr e b0 b1 -> do
         (e', t) <- exprWithoutBlock e
-        when (t /= Bool) (throwSemanticError (IfScrutineeTypeMismatch e t))
+        when (t /= Bool) (throwError (IfScrutineeTypeMismatch e t))
         (b0', t0) <- block b0
         (b1', t1) <- block b1
-        when (t0 /= t1) (throwSemanticError (IfBlocksTypeMismatch b0 t0 b1 t1))
+        when (t0 /= t1) (throwError (IfBlocksTypeMismatch b0 t0 b1 t1))
         pure (IfExpr e' b0' b1', t0)
     UncheckedMatchExpr e0 as -> do
         (e0', t0) <- exprWithoutBlock e0
@@ -517,13 +504,13 @@ exprWithBlock = \case
                 let actualEnums = [n' | UncheckedMatchArm n' _ _ _ <- as]
                 when
                     (Set.fromList actualEnums /= Set.singleton n)
-                    (throwSemanticError (MatchArmEnumMismatch n actualEnums))
+                    (throwError (MatchArmEnumMismatch n actualEnums))
 
                 -- Check that the enum variant names exactly cover the variants.
                 let actualEnumVariants = [v | UncheckedMatchArm _ v _ _ <- as]
                 when
                     (sort actualEnumVariants /= Set.toAscList vs)
-                    (throwSemanticError
+                    (throwError
                         (MatchArmEnumVariantMismatch n actualEnumVariants))
 
                 iats' <- for as (\(UncheckedMatchArm _ v xs e) -> do
@@ -535,7 +522,7 @@ exprWithBlock = \case
                             (e', resultType) <- expr e
                             pure (i, CheckedMatchArm xts e', resultType))
                     else
-                        throwSemanticError (MatchArmArityMismatch n v xs))
+                        throwError (MatchArmArityMismatch n v xs))
 
                 -- Check that the types of the match arms are all the same.
                 let resultTypes = fmap (view _3) iats'
@@ -546,9 +533,9 @@ exprWithBlock = \case
 
                         pure (CheckedMatchExpr e0' n as', resultType)
                     _ ->
-                        throwSemanticError
+                        throwError
                             (MatchArmTypeMismatch as resultTypes)
-            _ -> throwSemanticError (MatchScrutineeTypeMismatch e0 t0)
+            _ -> throwError (MatchScrutineeTypeMismatch e0 t0)
 
 exprWithoutBlock
     :: ExprWithoutBlock 'Unchecked
@@ -569,7 +556,7 @@ exprWithoutBlock = \case
             (Not, Bool) -> pure (UnaryOpExpr Not e', Bool)
             (As F64, I64) -> pure (UnaryOpExpr AsF64 e', F64)
             (As I64, F64) -> pure (UnaryOpExpr AsI64 e', I64)
-            _ -> throwSemanticError (UnaryOpTypeMismatch o e t)
+            _ -> throwError (UnaryOpTypeMismatch o e t)
     BinaryOpExpr o e0 e1 -> do
         (e0', t0) <- exprWithoutBlock e0
         (e1', t1) <- exprWithoutBlock e1
@@ -593,7 +580,7 @@ exprWithoutBlock = \case
             (Cmp p, F64, F64) -> pure (BinaryOpExpr (Fcmp p) e0' e1', Bool)
             (And, Bool, Bool) -> pure (BinaryOpExpr And e0' e1', Bool)
             (Or, Bool, Bool) -> pure (BinaryOpExpr Or e0' e1', Bool)
-            _ -> throwSemanticError (BinaryOpTypeMismatch o e0 t0 e1 t1)
+            _ -> throwError (BinaryOpTypeMismatch o e0 t0 e1 t1)
     UncheckedCallExpr n es -> do
         ets' <- traverse exprWithoutBlock es
         let ts = fmap snd ets'
@@ -601,7 +588,7 @@ exprWithoutBlock = \case
         if ts == argumentTypes then
             pure (CheckedCallExpr n (fmap fst ets') returnType, returnType)
         else
-            throwSemanticError (CallExprTypeMismatch n es ts)
+            throwError (CallExprTypeMismatch n es ts)
     UncheckedStructExpr n es -> do
         ets' <- traverse exprWithoutBlock es
         let ts = fmap snd ets'
@@ -609,7 +596,7 @@ exprWithoutBlock = \case
         if ts == fieldTypes then
             pure (CheckedStructExpr n ets', Struct n)
         else
-            throwSemanticError (StructExprTypeMismatch n es ts)
+            throwError (StructExprTypeMismatch n es ts)
     UncheckedEnumExpr n v es -> do
         ets' <- traverse exprWithoutBlock es
         let ts = fmap snd ets'
@@ -617,7 +604,7 @@ exprWithoutBlock = \case
         if ts == fieldTypes then
             pure (CheckedEnumExpr n i ets', Enum n)
         else
-            throwSemanticError (EnumExprTypeMismatch n v es ts)
+            throwError (EnumExprTypeMismatch n v es ts)
     PrintLnExpr f@(UncheckedFormatString cs) es -> do
         ets' <- traverse exprWithoutBlock es
 
@@ -626,14 +613,14 @@ exprWithoutBlock = \case
         let formatSpecifier = \case
                 I64 -> pure "%lld"
                 F64 -> pure "%f"
-                _ -> throwSemanticError (PrintLnExprTypeMismatch f es ts)
+                _ -> throwError (PrintLnExprTypeMismatch f es ts)
 
         let step (builder, chunks) t =
                 case chunks' of
                     Hole : chunks'' -> do
                         s <- formatSpecifier t
                         pure (builder <> prefix <> s, chunks'')
-                    _ -> throwSemanticError (PrintLnExprArityMismatch f es)
+                    _ -> throwError (PrintLnExprArityMismatch f es)
               where
                 (ns, chunks') = span (/= Hole) chunks
 
@@ -643,7 +630,7 @@ exprWithoutBlock = \case
         (builder, leftovers) <- foldM step (mempty, cs) ts
 
         if Hole `elem` leftovers then
-            throwSemanticError (PrintLnExprArityMismatch f es)
+            throwError (PrintLnExprArityMismatch f es)
         else do
             let suffix = mconcat [Text.Lazy.Builder.fromText x | NonHole x <- leftovers]
 
@@ -664,7 +651,7 @@ constDef d@(ConstDecl _ constDeclType) c = do
     if constDeclType == t then
         pure (ConstDef d c')
     else
-        throwSemanticError (ConstDefTypeMismatch d c t)
+        throwError (ConstDefTypeMismatch d c t)
 
 constInit
     :: ConstInit 'Unchecked
@@ -675,7 +662,7 @@ constInit = \case
         case l of
             I64Lit x -> pure (NegI64LitInit x, I64)
             F64Lit x -> pure (NegF64LitInit x, F64)
-            _ -> throwSemanticError (NegLitInitTypeMismatch l (litType l))
+            _ -> throwError (NegLitInitTypeMismatch l (litType l))
     StructInit n cs -> do
         fieldTypes <- findStruct n
         cts' <- traverse constInit cs
@@ -683,7 +670,7 @@ constInit = \case
         if ts == fieldTypes then
             pure (StructInit n (fmap fst cts'), Struct n)
         else
-            throwSemanticError (StructInitTypeMismatch n cs ts)
+            throwError (StructInitTypeMismatch n cs ts)
     UncheckedEnumInit n v cs -> do
         (i, fieldTypes) <- findEnumVariant n v
         cts' <- traverse constInit cs
@@ -691,4 +678,4 @@ constInit = \case
         if ts == fieldTypes then
             pure (CheckedEnumInit n i (fmap fst cts'), Enum n)
         else
-            throwSemanticError (EnumInitTypeMismatch n v cs ts)
+            throwError (EnumInitTypeMismatch n v cs ts)
