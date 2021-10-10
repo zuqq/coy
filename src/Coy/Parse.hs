@@ -237,7 +237,8 @@ exprWithoutBlock = makeExprParser term ops
         hole = "{}" $> Hole
 
         nonHole = fmap NonHole (
-            Parser.takeWhile1P (Just "non-hole character")
+            Parser.takeWhile1P
+                (Just "non-hole character")
                 (\c -> isAscii c && isPrint c && c /= '"' && c /= '{'))
 
     ops =
@@ -402,7 +403,8 @@ isIdentifierContinuation c = isAscii c && (isAlphaNum c || c == '_')
 
 identifierContinuation :: Parser Text
 identifierContinuation =
-    Parser.takeWhileP (Just "identifier continuation character")
+    Parser.takeWhileP
+        (Just "identifier continuation character")
         isIdentifierContinuation
 
 lowerIdentifier :: Parser Text
@@ -421,7 +423,8 @@ upperIdentifier = do
 
 constNameContinuation :: Parser Text
 constNameContinuation =
-    Parser.takeWhileP (Just "constant name continuation character")
+    Parser.takeWhileP
+        (Just "constant name continuation character")
         (\c -> isAsciiUpper c || isDigit c || c == '_')
 
 constName :: Parser Text
