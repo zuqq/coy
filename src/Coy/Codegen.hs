@@ -4,7 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo #-}
 
-module Coy.Codegen (codegen) where
+module Coy.Codegen where
 
 import Control.Monad (void, zipWithM_)
 -- We need to use lazy @State@ for @-XRecursiveDo@.

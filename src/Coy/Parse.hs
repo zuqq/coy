@@ -6,14 +6,7 @@
 --
 -- - Every token owns the whitespace that comes after it.
 -- - Every statement owns the semicolon that comes after it.
-module Coy.Parse
-    (
-    -- * Error type
-      ParseError (..)
-    -- * Entry point
-    , parse
-    )
-    where
+module Coy.Parse where
 
 import Control.Applicative ((<|>), many)
 import Control.Monad.Combinators.Expr (

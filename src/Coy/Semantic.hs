@@ -4,14 +4,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Coy.Semantic
-    (
-    -- * Error type
-      SemanticError (..)
-    -- * Entry point
-    , semantic
-    )
-    where
+module Coy.Semantic where
 
 import Algebra.Graph (stars)
 import Algebra.Graph.ToGraph (topSort)
