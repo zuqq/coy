@@ -111,11 +111,10 @@ fnArg = do
     pure (FnArg an at)
 
 block :: Parser (Block 'Unchecked)
-block =
-    withinBraces (do
-        ss <- many (Parser.try statement)
-        e <- expr
-        pure (Block (Vector.fromList ss) e))
+block = withinBraces (do
+    ss <- many (Parser.try statement)
+    e <- expr
+    pure (Block (Vector.fromList ss) e))
 
 statement :: Parser (Statement 'Unchecked)
 statement = letStatement <|> exprStatement
@@ -141,8 +140,7 @@ pattern = varPattern <|> structPattern
         pure (UncheckedStructPattern n (Vector.fromList vs))
 
 expr :: Parser (Expr 'Unchecked)
-expr =
-    fmap ExprWithBlock exprWithBlock <|> fmap ExprWithoutBlock exprWithoutBlock
+expr = fmap ExprWithBlock exprWithBlock <|> fmap ExprWithoutBlock exprWithoutBlock
 
 exprWithBlock :: Parser (ExprWithBlock 'Unchecked)
 exprWithBlock = blockExpr <|> ifExpr <|> matchExpr
@@ -267,15 +265,9 @@ exprWithoutBlock = makeExprParser term ops
             [InfixL (symbol "||" $> BinaryOpExpr Or)]
         ]
       where
-        bitAnd =
-                Parser.char '&'
-            <*  Parser.notFollowedBy (Parser.char '&')
-            <*  space
+        bitAnd = Parser.char '&' <* Parser.notFollowedBy (Parser.char '&') <* space
 
-        bitOr =
-                Parser.char '|'
-            <*  Parser.notFollowedBy (Parser.char '|')
-            <*  space
+        bitOr = Parser.char '|' <* Parser.notFollowedBy (Parser.char '|') <* space
 
 -- This definition ties down all the type variables.
 decimal :: Parser Integer
@@ -288,13 +280,9 @@ lit = unitLit <|> boolLit <|> Parser.try f64Lit <|> i64Lit
 
     boolLit = fmap BoolLit (true $> True <|> false $> False) <* space
       where
-        true =
-                "true"
-            <*  Parser.notFollowedBy (Parser.satisfy isIdentifierContinuation)
+        true = "true" <* Parser.notFollowedBy (Parser.satisfy isIdentifierContinuation)
 
-        false =
-                "false"
-            <*  Parser.notFollowedBy (Parser.satisfy isIdentifierContinuation)
+        false = "false" <* Parser.notFollowedBy (Parser.satisfy isIdentifierContinuation)
 
     f64Lit = do
         n <- decimal
@@ -302,8 +290,7 @@ lit = unitLit <|> boolLit <|> Parser.try f64Lit <|> i64Lit
         (s, c) <- Parser.match (Parser.option 0 decimal) <* space
         pure (F64Lit (encodeDecimalFloat n c (-Text.length s)))
       where
-        encodeDecimalFloat n c e =
-            fromIntegral n + fromIntegral c * 10 ** fromIntegral e
+        encodeDecimalFloat n c e = fromIntegral n + fromIntegral c * 10 ** fromIntegral e
 
     i64Lit = fmap I64Lit decimal <* space
 
