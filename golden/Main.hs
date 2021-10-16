@@ -8,6 +8,8 @@ import Test.Hspec.Runner (defaultConfig, evaluateSummary, runSpec)
 
 import qualified Data.ByteString.Lazy as ByteString.Lazy
 
+import Paths_coy (getBinDir)
+
 main :: IO ()
 main = do
     goldenDirectory <- makeAbsolute "./golden"
@@ -16,13 +18,17 @@ main = do
 
     fileNames <- getCoySourceFileNames goldenDataDirectory
 
+    executableDirectory <- getBinDir
+
+    let executable = executableDirectory </> "coy-exe"
+
     withTempDirectory goldenDirectory "data" (\tempDirectory ->
         runAndEvaluate (
             describe "golden/data" (
                 for_ fileNames (\fileName -> it fileName (do
                     let filePath = goldenDataDirectory </> fileName
 
-                    runProcess_ (setWorkingDir tempDirectory (proc "stack" ["run", "--", filePath]))
+                    runProcess_ (setWorkingDir tempDirectory (proc executable [filePath]))
 
                     let executableFilePath = tempDirectory </> dropExtension fileName
 
