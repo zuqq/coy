@@ -25,7 +25,7 @@ data Module (u :: Status) where
         -> [ConstDef 'Checked]
         -- ^ Definitions of global constants.
         -> Vector Text
-        -- ^ Symbol table.
+        -- ^ Intern pool.
         -> [FnDef 'Checked]
         -- ^ Definitions of the other functions.
         -> FnDef 'Checked

@@ -37,7 +37,7 @@ data Context = Context
     { _structs :: Map Text (Vector (Type 'Checked))
     , _enums :: Map Text (Map Text (Int, Vector (Type 'Checked)))
     , _consts :: Map Text (Type 'Checked)
-    , _symbols :: Map Text Int
+    , _strings :: Map Text Int
     , _fns :: Map Text (Vector (Type 'Checked), Type 'Checked)
     , _values :: Map Text (Type 'Checked)
     }
@@ -52,8 +52,8 @@ enums = lens _enums (\c es -> c {_enums = es})
 consts :: Lens' Context (Map Text (Type 'Checked))
 consts = lens _consts (\c cs -> c {_consts = cs})
 
-symbols :: Lens' Context (Map Text Int)
-symbols = lens _symbols (\c ss -> c {_symbols = ss})
+strings :: Lens' Context (Map Text Int)
+strings = lens _strings (\c ss -> c {_strings = ss})
 
 fns :: Lens' Context (Map Text (Vector (Type 'Checked), Type 'Checked))
 fns = lens _fns (\c fs -> c {_fns = fs})
@@ -271,11 +271,11 @@ findConst n = do
     cs <- use consts
     Map.lookup n cs `orFail` ConstNotFound n
 
-bindSymbol :: Text -> Semantic Int
-bindSymbol s = do
-    ss <- use symbols
+bindString :: Text -> Semantic Int
+bindString s = do
+    ss <- use strings
     let i = Map.findWithDefault (Map.size ss) s ss
-    symbols .= Map.insert s i ss
+    strings .= Map.insert s i ss
     pure i
 
 findFn :: Text -> Semantic (Vector (Type 'Checked), Type 'Checked)
@@ -319,15 +319,13 @@ semantic (UncheckedModule typeDefs constDefs fnDefs) = do
 
     let cs = Map.fromList [(n, t) | ConstDecl n t <- constDecls']
 
-    let symbolTable = mempty
-
     let fs = Map.fromList (
                 intrinsicFns
             <>  [(n, (fmap fnArgType as, t)) | FnDecl n as t <- fnDecls'])
 
     let vs = mempty
 
-    let context = Context ss es cs symbolTable fs vs
+    let context = Context ss es cs mempty fs vs
 
     constDefs' <- evalSemantic (
         zipWithM constDef constDecls' [c | ConstDef _ c <- constDefs]) context
@@ -335,8 +333,8 @@ semantic (UncheckedModule typeDefs constDefs fnDefs) = do
     (fnDefs', context') <- runSemantic (
         zipWithM fnDef fnDecls' [b | FnDef _ b <- fnDefs]) context
 
-    let symbolTable' =
-            Vector.fromList (fmap fst (sortOn snd (Map.toList (view symbols context'))))
+    let internPool =
+            Vector.fromList (fmap fst (sortOn snd (Map.toList (view strings context'))))
 
     let (mainFnDefs', otherFnDefs') =
             partition (\fd -> fnDefName fd == "main") fnDefs'
@@ -344,7 +342,7 @@ semantic (UncheckedModule typeDefs constDefs fnDefs) = do
     case mainFnDefs' of
         [mainFnDef'@(FnDef (FnDecl _ as t) _)]
             | Vector.null as, t == Unit ->
-                pure (CheckedModule typeDefs' constDefs' symbolTable' otherFnDefs' mainFnDef')
+                pure (CheckedModule typeDefs' constDefs' internPool otherFnDefs' mainFnDef')
             | otherwise ->
                 throwError (MainFnDefTypeMismatch mainFnDef')
         _ -> throwError MainFnDefMissing
@@ -629,7 +627,7 @@ exprWithoutBlock = \case
 
             let f' = Text.Lazy.toStrict (Text.Lazy.Builder.toLazyText (builder <> suffix <> "\n"))
 
-            i <- bindSymbol f'
+            i <- bindString f'
 
             let es' = fmap fst ets'
 

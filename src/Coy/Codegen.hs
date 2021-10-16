@@ -37,7 +37,7 @@ import Coy.Syntax
 
 data Context = Context
     { _consts :: Map Text LLVM.AST.Operand
-    , _symbols :: Vector LLVM.AST.Operand
+    , _strings :: Vector LLVM.AST.Operand
     , _fns :: Map Text LLVM.AST.Operand
     , _values :: Map Text LLVM.AST.Operand
     }
@@ -45,8 +45,8 @@ data Context = Context
 consts :: Lens' Context (Map Text LLVM.AST.Operand)
 consts = lens _consts (\s cs -> s {_consts = cs})
 
-symbols :: Lens' Context (Vector LLVM.AST.Operand)
-symbols = lens _symbols (\s ss -> s {_symbols = ss})
+strings :: Lens' Context (Vector LLVM.AST.Operand)
+strings = lens _strings (\s ss -> s {_strings = ss})
 
 fns :: Lens' Context (Map Text LLVM.AST.Operand)
 fns = lens _fns (\s fs -> s {_fns = fs})
@@ -72,8 +72,8 @@ bindConst x t = consts %= Map.insert x t
 findConst :: Text -> IRBuilder LLVM.AST.Operand
 findConst x = fmap (Map.! x) (use consts)
 
-findSymbol :: Int -> IRBuilder LLVM.AST.Operand
-findSymbol i = fmap (Vector.! i) (use symbols)
+findString :: Int -> IRBuilder LLVM.AST.Operand
+findString i = fmap (Vector.! i) (use strings)
 
 bindFn :: Text -> LLVM.AST.Operand -> ModuleBuilder ()
 bindFn n t = fns %= Map.insert n t
@@ -105,8 +105,8 @@ enumName n = \case
 fnName :: Text -> Text
 fnName = ("fn." <>)
 
-symbolName :: Int -> Text
-symbolName i = "symbol." <> Text.pack (show i)
+stringName :: Int -> Text
+stringName i = "string." <> Text.pack (show i)
 
 reifyName :: Text -> LLVM.AST.Name
 reifyName =
@@ -272,10 +272,7 @@ computeEnumSizes typeDefs = enumSizes
 builder :: Module 'Checked -> ModuleBuilder ()
 -- Here and elsewhere the @-XRecursiveDo@ extension allows me to use forward
 -- references without too much trouble.
-builder (CheckedModule typeDefs constDefs symbolTable otherFnDefs (FnDef _ mainBlock)) = mdo
-    -- Define symbols.
-    symbols <~ Vector.imapM symbol symbolTable
-
+builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBlock)) = mdo
     -- Define the unit type.
     void (defineType "unit" (LLVM.AST.StructureType False mempty))
 
@@ -286,6 +283,8 @@ builder (CheckedModule typeDefs constDefs symbolTable otherFnDefs (FnDef _ mainB
 
     -- Define constants.
     traverse_ constDef constDefs
+
+    strings <~ Vector.imapM string internPool
 
     -- Declare @memcpy@.
     void (LLVM.IRBuilder.extern memcpyName memcpyArgTypes memcpyReturnType)
@@ -320,8 +319,8 @@ builder (CheckedModule typeDefs constDefs symbolTable otherFnDefs (FnDef _ mainB
 
     pure ()
   where
-    symbol i s = do
-        let n' = reifyName (symbolName i)
+    string i s = do
+        let n' = reifyName (stringName i)
 
         let s' = Text.unpack s
 
@@ -670,7 +669,7 @@ exprWithoutBlock = \case
     CheckedStructExpr n ets -> constructStruct n ets
     CheckedEnumExpr n i ets -> constructEnumVariant n i ets
     PrintLnExpr (CheckedFormatString i) es -> do
-        a0 <- findSymbol i
+        a0 <- findString i
         as <- traverse exprWithoutBlock es
         void (LLVM.IRBuilder.call printf [(a, mempty) | a <- a0 : as])
         pure (LLVM.AST.ConstantOperand unitLit)
