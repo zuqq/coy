@@ -59,8 +59,7 @@ type ModuleBuilder = LLVM.IRBuilder.ModuleBuilderT (State Context)
 type IRBuilder = LLVM.IRBuilder.IRBuilderT ModuleBuilder
 
 codegen :: String -> Module 'Checked -> LLVM.AST.Module
-codegen n checked =
-    evalState (LLVM.IRBuilder.buildModuleT n' (builder checked)) context
+codegen n checked = evalState (LLVM.IRBuilder.buildModuleT n' (builder checked)) context
   where
     n' = ByteString.Short.toShort (ByteString.Char8.pack n)
 
@@ -109,10 +108,7 @@ stringName :: Int -> Text
 stringName i = "string." <> Text.pack (show i)
 
 reifyName :: Text -> LLVM.AST.Name
-reifyName =
-      LLVM.AST.Name
-    . ByteString.Short.toShort
-    . Text.Encoding.encodeUtf8
+reifyName = LLVM.AST.Name . ByteString.Short.toShort . Text.Encoding.encodeUtf8
 
 reifyStruct :: Text -> LLVM.AST.Type
 reifyStruct = LLVM.AST.NamedTypeReference . reifyName . structName
@@ -165,8 +161,7 @@ globalReference
     -> LLVM.AST.Name
     -- ^ Name of the global variable.
     -> LLVM.AST.Operand
-globalReference t' =
-    LLVM.AST.ConstantOperand . LLVM.AST.Constant.GlobalReference t'
+globalReference t' = LLVM.AST.ConstantOperand . LLVM.AST.Constant.GlobalReference t'
 
 localReference
     :: LLVM.AST.Type
@@ -200,9 +195,7 @@ memcpyReturnType = LLVM.AST.Type.void
 memcpy :: LLVM.AST.Operand
 memcpy = globalReference memcpyFnType memcpyName
   where
-    memcpyFnType =
-        LLVM.AST.Type.ptr
-            (LLVM.AST.FunctionType memcpyReturnType memcpyArgTypes False)
+    memcpyFnType = LLVM.AST.Type.ptr (LLVM.AST.FunctionType memcpyReturnType memcpyArgTypes False)
 
 printfName :: LLVM.AST.Name
 printfName = "printf"
@@ -216,9 +209,7 @@ printfReturnType = LLVM.AST.Type.i32
 printf :: LLVM.AST.Operand
 printf = globalReference printfFnType printfName
   where
-    printfFnType =
-        LLVM.AST.Type.ptr
-            (LLVM.AST.FunctionType printfReturnType printfArgTypes True)
+    printfFnType = LLVM.AST.Type.ptr (LLVM.AST.FunctionType printfReturnType printfArgTypes True)
 
 index :: Integer -> LLVM.AST.Operand
 index = LLVM.IRBuilder.int32
@@ -428,13 +419,11 @@ copyTo dest0 src0 t' = do
 
     let isvolatile = LLVM.IRBuilder.bit 0
 
-    let as' =
-            [(dest, mempty), (src, mempty), (len, mempty), (isvolatile, mempty)]
+    let as' = [(dest, mempty), (src, mempty), (len, mempty), (isvolatile, mempty)]
 
     void (LLVM.IRBuilder.call memcpy as')
   where
-    castToVoidPointer p =
-        LLVM.IRBuilder.bitcast p (LLVM.AST.Type.ptr LLVM.AST.Type.i8)
+    castToVoidPointer p = LLVM.IRBuilder.bitcast p (LLVM.AST.Type.ptr LLVM.AST.Type.i8)
 
 copyToReturnArg
     :: LLVM.AST.Operand
