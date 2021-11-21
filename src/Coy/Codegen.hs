@@ -284,6 +284,7 @@ builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBl
     -- Define constants.
     traverse_ constDef constDefs
 
+    -- Define strings.
     strings <~ Vector.imapM string internPool
 
     -- Declare @memcpy@.
