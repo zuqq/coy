@@ -380,27 +380,27 @@ fnDef (FnDef (FnDecl n as t) b) =
     let ans = [an | FnArg an _ <- toList as] in
 
     if hasPointerOperandType t then
-        let returnArgType = operandType t in
+        let returnArgType = operandType t
 
-        let metadata' = (returnArgType, returnArgAttrs) : metadata in
+        in let metadata' = (returnArgType, returnArgAttrs) : metadata
 
-        let body operands = do
+        in let body operands = do
                 LLVM.IRBuilder.emitBlockStart "entry"
                 namespaced (do
                     zipWithM_ bindValue ans (tail operands)
-                    tailBlock b) in
+                    tailBlock b)
 
-        defineFn metadata' LLVM.AST.Type.void body
+        in defineFn metadata' LLVM.AST.Type.void body
     else
-        let t' = reifyType t in
+        let t' = reifyType t
 
-        let body operands = do
+        in let body operands = do
                 LLVM.IRBuilder.emitBlockStart "entry"
                 namespaced (do
                     zipWithM_ bindValue ans operands
-                    tailBlock b) in
+                    tailBlock b)
 
-        defineFn metadata t' body
+        in defineFn metadata t' body
 
 copyTo
     :: LLVM.AST.Operand
