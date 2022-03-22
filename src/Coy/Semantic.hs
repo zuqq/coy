@@ -8,7 +8,7 @@ module Coy.Semantic where
 
 import Algebra.Graph (stars)
 import Algebra.Graph.ToGraph (topSort)
-import Control.Monad (foldM, when, zipWithM)
+import Control.Monad (when, zipWithM)
 import Control.Monad.Error.Class (MonadError (throwError))
 import Control.Monad.Trans.Except (Except, runExcept)
 import Control.Monad.Trans.State.Strict (StateT, evalStateT, runStateT)
@@ -230,14 +230,9 @@ data SemanticError
         -- ^ The format string.
         [ExprWithoutBlock 'Unchecked]
         -- ^ The argument list.
-    | PrintLnExprTypeMismatch
-    -- ^ The argument list contains non-printable expressions.
-        (FormatString 'Unchecked)
-        -- ^ The format string.
-        [ExprWithoutBlock 'Unchecked]
-        -- ^ The argument list.
-        [Type 'Checked]
-        -- ^ Types of the arguments.
+    | PrintLnExprExcessHole FormatStringChunk
+    | PrintLnExprExcessArg (Type 'Checked)
+    | PrintLnExprTypeMismatch (Type 'Checked)
     deriving Show
 
 type Semantic = StateT Context (Except SemanticError)
@@ -596,42 +591,52 @@ exprWithoutBlock = \case
             pure (CheckedEnumExpr n i ets', Enum n)
         else
             throwError (EnumExprTypeMismatch n v es ts)
-    PrintLnExpr f@(UncheckedFormatString cs) es -> do
+    PrintLnExpr (UncheckedFormatString cs) es -> do
         ets' <- traverse exprWithoutBlock es
 
         let ts = fmap snd ets'
 
-        let formatSpecifier = \case
-                I64 -> pure "%lld"
-                F64 -> pure "%f"
-                _ -> throwError (PrintLnExprTypeMismatch f es ts)
+        builder <- loop mempty cs ts
 
-        let step (builder, chunks) t =
-                case chunks' of
-                    Hole : chunks'' -> do
-                        s <- formatSpecifier t
-                        pure (builder <> prefix <> s, chunks'')
-                    _ -> throwError (PrintLnExprArityMismatch f es)
-              where
-                (ns, chunks') = span (/= Hole) chunks
+        let f = Text.Lazy.toStrict (Text.Lazy.Builder.toLazyText (builder <> "\n"))
 
-                prefix =
-                    mconcat [Text.Lazy.Builder.fromText x | NonHole x <- ns]
+        i <- bindString f
 
-        (builder, leftovers) <- foldM step (mempty, cs) ts
+        let es' = fmap fst ets'
 
-        if Hole `elem` leftovers then
-            throwError (PrintLnExprArityMismatch f es)
-        else do
-            let suffix = mconcat [Text.Lazy.Builder.fromText x | NonHole x <- leftovers]
+        pure (PrintLnExpr (CheckedFormatString i) es', Unit)
+      where
+        loop builder chunks types =
+            let (builder', chunks') = nonHoles builder chunks in
 
-            let f' = Text.Lazy.toStrict (Text.Lazy.Builder.toLazyText (builder <> suffix <> "\n"))
+            hole builder' chunks' types
 
-            i <- bindString f'
+        nonHoles builder chunks =
+            let (prefix, chunks') = span (/= Hole) chunks in
 
-            let es' = fmap fst ets'
+            let builder' = builder <> mconcat [Text.Lazy.Builder.fromText x | NonHole x <- prefix] in
 
-            pure (PrintLnExpr (CheckedFormatString i) es', Unit)
+            (builder', chunks')
+
+        hole builder chunks types =
+            case (chunks, types) of
+                -- There are neither holes nor arguments left, so we are done.
+                ([], []) -> pure builder
+                -- There are too many holes.
+                (c : _, []) -> throwError (PrintLnExprExcessHole c)
+                -- There are too many arguments.
+                ([], t : _) -> throwError (PrintLnExprExcessArg t)
+                -- There are both holes and arguments left.
+                (Hole : chunks', t : types') -> do
+                    s <- formatSpecifier t
+                    loop (builder <> s) chunks' types'
+                -- Unreachable.
+                (c : _, _) -> error ("Internal error: unexpected `hole _ (" <> show c <> " : _) _`.")
+
+        formatSpecifier = \case
+            I64 -> pure "%lld"
+            F64 -> pure "%f"
+            t -> throwError (PrintLnExprTypeMismatch t)
 
 constDef
     :: ConstDecl 'Checked
