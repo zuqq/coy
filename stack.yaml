@@ -1,4 +1,4 @@
-resolver: lts-18.1
+resolver: lts-19.3
 packages:
 - .
 extra-deps:
@@ -7,4 +7,4 @@ extra-deps:
   subdirs:
   - llvm-hs-pure
 - github: zuqq/llvm-hs-pretty
-  commit: 322e8de20bc60cdfd342840f61dd65ce5fb1b961
+  commit: a5ba79623a5aa28d7cc36d8e8c8dcd31f13ce30b
