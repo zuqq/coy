@@ -10,9 +10,9 @@ struct RandomVector(Vector, i64);
 
 fn next(s0: i64) -> RandomF64 {
     let s1 = s0 + (-7046029254386353131);
-    let x0 = (s1 ^ ((s1 >> 30) &  17179869183)) * (-4658895280553007687);
+    let x0 = (s1 ^ ((s1 >> 30) & 17179869183)) * (-4658895280553007687);
     let x1 = (x0 ^ ((x0 >> 27) & 137438953471)) * (-7723592293110705685);
-    let x2 =  x1 ^ ((x1 >> 31) &   8589934591);
+    let x2 = x1 ^ ((x1 >> 31) & 8589934591);
     let x3 = ((x2 >> 11) & 9007199254740991) as f64 / 9007199254740992.0;
     RandomF64(x3, s1)
 }
@@ -73,16 +73,16 @@ fn reflect(v: Vector, n: Vector) -> Vector {
 }
 
 fn refract(
-    v: Vector,  // Unit vector to refract.
-    n: Vector,  // Unit surface normal at the point of impact.
-    r: f64      // Quotient of the refractive indices.
+    v: Vector, // Unit vector to refract.
+    n: Vector, // Unit surface normal at the point of impact.
+    r: f64     // Quotient of the refractive indices.
 ) -> Vector {
-    let parallel =
-        vector_mul(r, vector_sub(v, vector_mul(dot_product(v, n), n)));
+    let parallel = vector_mul(r, vector_sub(v, vector_mul(dot_product(v, n), n)));
 
     vector_add(
         parallel,
-        vector_mul(-sqrt(1.0 - dot_product(parallel, parallel)), n))
+        vector_mul(-sqrt(1.0 - dot_product(parallel, parallel)), n)
+    )
 }
 
 struct Ray(Vector, Vector);
@@ -93,7 +93,8 @@ fn at(ray: Ray, t: f64) -> Vector {
 }
 
 enum MaybeF64 {
-    None(), Some(f64)
+    None(),
+    Some(f64)
 }
 
 fn safe_sqrt(x: f64) -> MaybeF64 {
@@ -125,12 +126,12 @@ fn sphere_time(sphere: Sphere, ray: Ray) -> MaybeF64 {
     let disc = b * b - a * c;
 
     match safe_sqrt(disc) {
-        MaybeF64::None()     => MaybeF64::None(),
+        MaybeF64::None() => MaybeF64::None(),
         MaybeF64::Some(root) => {
             let t0 = (-b - root) / a;
             let t1 = (-b + root) / a;
             match safe_time(t0) {
-                MaybeF64::None()  => safe_time(t1),
+                MaybeF64::None() => safe_time(t1),
                 MaybeF64::Some(t) => MaybeF64::Some(t)
             }
         }
@@ -144,7 +145,7 @@ fn sphere_normal(sphere: Sphere, p: Vector) -> Vector {
 
 fn sphere_hit(sphere: Sphere, material: Material, ray: Ray) -> MaybeHit {
     match sphere_time(sphere, ray) {
-        MaybeF64::None()  => MaybeHit::None(),
+        MaybeF64::None() => MaybeHit::None(),
         MaybeF64::Some(t) => {
             let p = at(ray, t);
             MaybeHit::Some(Hit(t, p, sphere_normal(sphere, p), material))
@@ -155,7 +156,7 @@ fn sphere_hit(sphere: Sphere, material: Material, ray: Ray) -> MaybeHit {
 struct Color(f64, f64, f64);
 
 const BLACK: Color = Color(0.000, 0.000, 0.0000);
-const BLUE:  Color = Color(0.765, 0.843, 0.9339);
+const BLUE: Color = Color(0.765, 0.843, 0.9339);
 const WHITE: Color = Color(1.000, 1.000, 1.0000);
 
 fn color_add(c0: Color, c1: Color) -> Color {
@@ -180,23 +181,25 @@ fn mix(c0: Color, c1: Color) -> Color {
 }
 
 enum Material {
-    Dielectric(f64), Diffuse(Color), Specular(Color)
+    Dielectric(f64),
+    Diffuse(Color),
+    Specular(Color)
 }
 
 fn scatter_color(c0: Color, material: Material) -> Color {
     match material {
         Material::Dielectric(_) => c0,
-        Material::Diffuse(c)    => mix(c0, c),
-        Material::Specular(c)   => mix(c0, c)
+        Material::Diffuse(c) => mix(c0, c),
+        Material::Specular(c) => mix(c0, c)
     }
 }
 
 fn scatter_ray(
-    v: Vector,           // Direction of the incoming ray.
-    p: Vector,           // Point of impact.
-    n: Vector,           // Unit surface normal at the point of impact.
-    material: Material,  // Surface material.
-    s0: i64              // State of the PRNG.
+    v: Vector,          // Direction of the incoming ray.
+    p: Vector,          // Point of impact.
+    n: Vector,          // Unit surface normal at the point of impact.
+    material: Material, // Surface material.
+    s0: i64             // State of the PRNG.
 ) -> RandomRay {
     match material {
         Material::Dielectric(r) => {
@@ -206,19 +209,13 @@ fn scatter_ray(
             // `n` and `r` accordingly.
             let angle_of_impact = dot_product(unit_v, n);
 
-            let directed_n =
-                if angle_of_impact > 0.0 {
-                    vector_mul(-1.0, n)
-                } else {
-                    n
-                };
+            let directed_n = if angle_of_impact > 0.0 {
+                vector_mul(-1.0, n)
+            } else {
+                n
+            };
 
-            let directed_r =
-                if angle_of_impact > 0.0 {
-                    r
-                } else {
-                    1.0 / r
-                };
+            let directed_r = if angle_of_impact > 0.0 { r } else { 1.0 / r };
 
             let a = dot_product(unit_v, directed_n);
 
@@ -231,42 +228,39 @@ fn scatter_ray(
             let RandomF64(x, s1) = next(s0);
 
             // Reflect with probability `f3` or if Snell's law doesn't apply.
-            let direction =
-                if x < f3 || directed_r * sqrt(1.0 - a * a) > 1.0 {
-                    reflect(unit_v, directed_n)
-                } else {
-                    refract(unit_v, directed_n, directed_r)
+            let direction = if x < f3 || directed_r * sqrt(1.0 - a * a) > 1.0 {
+                reflect(unit_v, directed_n)
+            } else {
+                refract(unit_v, directed_n, directed_r)
             };
 
             RandomRay(Ray(p, direction), s1)
         },
-        Material::Diffuse(_)    => {
+        Material::Diffuse(_) => {
             let RandomVector(u, s1) = next_from_unit_sphere(s0);
             RandomRay(Ray(p, vector_add(n, u)), s1)
         },
-        Material::Specular(_)   => {
-            RandomRay(Ray(p, reflect(v, n)), s0)
-        }
+        Material::Specular(_) => RandomRay(Ray(p, reflect(v, n)), s0)
     }
 }
 
 struct CameraSpec(
-    Vector,  // Center of the lens.
-    f64,     // Angle of view.
-    f64,     // Diameter of the lens.
-    Vector,  // Center of the focal plane.
-    Vector,  // Upward direction.
-    i64,     // Width in pixels.
-    i64      // Height in pixels.
+    Vector, // Center of the lens.
+    f64,    // Angle of view.
+    f64,    // Diameter of the lens.
+    Vector, // Center of the focal plane.
+    Vector, // Upward direction.
+    i64,    // Width in pixels.
+    i64     // Height in pixels.
 );
 
 struct Camera(
-    Vector,  // Center of the lens.
-    f64,     // Aperture.
-    Vector,  // Origin of the focal plane.
-    Vector,  // Unit vector in x-direction.
-    Vector,  // Unit vector in y-direction.
-    f64      // Side length of a pixel.
+    Vector, // Center of the lens.
+    f64,    // Aperture.
+    Vector, // Origin of the focal plane.
+    Vector, // Unit vector in x-direction.
+    Vector, // Unit vector in y-direction.
+    f64     // Side length of a pixel.
 );
 
 fn make_camera_from_spec(spec: CameraSpec) -> Camera {
@@ -278,12 +272,10 @@ fn make_camera_from_spec(spec: CameraSpec) -> Camera {
     let z = unit(v);
     let x = cross_product(unit(up), z);
     let y = cross_product(z, x);
-    let o =
-        vector_sub(
-            vector_sub(
-                focus,
-                vector_mul(w / 2.0, x)),
-                vector_mul(h / 2.0, y));
+    let o = vector_sub(
+        vector_sub(focus, vector_mul(w / 2.0, x)),
+        vector_mul(h / 2.0, y)
+    );
     Camera(lens, aperture, o, x, y, s)
 }
 
@@ -306,18 +298,11 @@ fn shoot(camera: Camera, i: i64, j: i64, s0: i64) -> RandomRay {
     let RandomF64(dj, s3) = next(s2);
     let RandomF64(di, s4) = next(s3);
 
-    let source =
-        vector_add(
-            vector_add(
-                lens,
-                vector_mul(dx, x)),
-                vector_mul(dy, y));
-    let target =
-        vector_add(
-            vector_add(
-                o,
-                vector_mul((j as f64 + dj) * s, x)),
-                vector_mul((i as f64 + di) * s, y));
+    let source = vector_add(vector_add(lens, vector_mul(dx, x)), vector_mul(dy, y));
+    let target = vector_add(
+        vector_add(o, vector_mul((j as f64 + dj) * s, x)),
+        vector_mul((i as f64 + di) * s, y)
+    );
     RandomRay(Ray(source, vector_sub(target, source)), s4)
 }
 
@@ -342,16 +327,17 @@ struct Hit(
 );
 
 enum MaybeHit {
-    None(), Some(Hit)
+    None(),
+    Some(Hit)
 }
 
 fn closer_maybe_hit(maybe_hit0: MaybeHit, maybe_hit1: MaybeHit) -> MaybeHit {
     match maybe_hit0 {
-        MaybeHit::None()   => maybe_hit1,
+        MaybeHit::None() => maybe_hit1,
         MaybeHit::Some(h0) => {
             let Hit(t0, _, _, _) = h0;
             match maybe_hit1 {
-                MaybeHit::None()   => maybe_hit0,
+                MaybeHit::None() => maybe_hit0,
                 MaybeHit::Some(h1) => {
                     let Hit(t1, _, _, _) = h1;
                     if t0 <= t1 {
@@ -382,29 +368,25 @@ fn ground_hit(material: Material, ray: Ray) -> MaybeHit {
     let Vector(_, _, z) = p;
 
     match ground_time(ray) {
-        MaybeF64::None()  => MaybeHit::None(),
+        MaybeF64::None() => MaybeHit::None(),
         MaybeF64::Some(t) => {
-            let n =
-                if z >= 0.0 {
-                    Vector(0.0, 1.0, 0.0)
-                } else {
-                    Vector(0.0, -1.0, 0.0)
-                };
+            let n = if z >= 0.0 {
+                Vector(0.0, 1.0, 0.0)
+            } else {
+                Vector(0.0, -1.0, 0.0)
+            };
             MaybeHit::Some(Hit(t, at(ray, t), n, material))
         }
     }
 }
 
-const SPHERE0: Sphere = Sphere(Vector( 0.000, 0.5,  0.000), 0.5);
-const SPHERE1: Sphere = Sphere(Vector( 0.707, 0.5, -0.707), 0.5);
+const SPHERE0: Sphere = Sphere(Vector(0.000, 0.5, 0.000), 0.5);
+const SPHERE1: Sphere = Sphere(Vector(0.707, 0.5, -0.707), 0.5);
 const SPHERE2: Sphere = Sphere(Vector(-1.250, 1.5, -5.000), 1.5);
 
-const SPHERE_MATERIAL0: Material =
-    Material::Specular(Color(0.773, 0.777, 0.780));
-const SPHERE_MATERIAL1: Material =
-    Material::Dielectric(1.5);
-const SPHERE_MATERIAL2: Material =
-    Material::Diffuse(Color(0.851, 0.008, 0.490));
+const SPHERE_MATERIAL0: Material = Material::Specular(Color(0.773, 0.777, 0.780));
+const SPHERE_MATERIAL1: Material = Material::Dielectric(1.5);
+const SPHERE_MATERIAL2: Material = Material::Diffuse(Color(0.851, 0.008, 0.490));
 
 const GROUND_MATERIAL: Material = Material::Diffuse(Color(0.482, 0.702, 0.412));
 
@@ -412,10 +394,13 @@ fn hit(ray: Ray) -> MaybeHit {
     closer_maybe_hit(
         closer_maybe_hit(
             sphere_hit(SPHERE0, SPHERE_MATERIAL0, ray),
-            sphere_hit(SPHERE1, SPHERE_MATERIAL1, ray)),
+            sphere_hit(SPHERE1, SPHERE_MATERIAL1, ray)
+        ),
         closer_maybe_hit(
             sphere_hit(SPHERE2, SPHERE_MATERIAL2, ray),
-            ground_hit(GROUND_MATERIAL, ray)))
+            ground_hit(GROUND_MATERIAL, ray)
+        )
+    )
 }
 
 fn sky(v: Vector) -> Color {
@@ -429,7 +414,7 @@ fn trace_ray_loop(ray0: Ray, k: i64, c0: Color, s0: i64) -> RandomColor {
     } else {
         let Ray(_, v) = ray0;
         match hit(ray0) {
-            MaybeHit::None()  => RandomColor(mix(c0, sky(v)), s0),
+            MaybeHit::None() => RandomColor(mix(c0, sky(v)), s0),
             MaybeHit::Some(h) => {
                 let Hit(_, p, n, material) = h;
                 let RandomRay(ray, s1) = scatter_ray(v, p, n, material, s0);
@@ -447,9 +432,9 @@ fn render_pixel_loop(
     camera: Camera,
     i: i64,
     j: i64,
-    k: i64,     // Loop variable.
-    c0: Color,  // Accumulator.
-    s0: i64     // State of the PRNG.
+    k: i64,    // Loop variable.
+    c0: Color, // Accumulator.
+    s0: i64    // State of the PRNG.
 ) -> RandomColor {
     if k >= 100 {
         RandomColor(color_mul(1.0 / 100.0, c0), s0)
@@ -479,21 +464,20 @@ fn main_loop(camera: Camera, j_max: i64, i: i64, j: i64, s0: i64) -> () {
 }
 
 fn main() -> () {
-    let width  = 400;
+    let width = 400;
     let height = 400;
 
     print_ppm_header(width, height);
 
-    let camera =
-        make_camera_from_spec(
-            CameraSpec(
-                Vector(0.0, 1.5, 3.0),
-                PI / 4.0,
-                0.1,
-                Vector(0.0, 1.0, 0.0),
-                Vector(0.0, 1.0, 0.0),
-                width,
-                height));
+    let camera = make_camera_from_spec(CameraSpec(
+        Vector(0.0, 1.5, 3.0),
+        PI / 4.0,
+        0.1,
+        Vector(0.0, 1.0, 0.0),
+        Vector(0.0, 1.0, 0.0),
+        width,
+        height
+    ));
 
     let s0 = 1;
 
