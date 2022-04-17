@@ -73,9 +73,12 @@ fn reflect(v: Vector, n: Vector) -> Vector {
 }
 
 fn refract(
-    v: Vector, // Unit vector to refract.
-    n: Vector, // Unit surface normal at the point of impact.
-    r: f64     // Quotient of the refractive indices.
+    // Unit vector to refract.
+    v: Vector,
+    // Unit surface normal at the point of impact.
+    n: Vector,
+    // Quotient of the refractive indices.
+    r: f64
 ) -> Vector {
     let parallel = vector_mul(r, vector_sub(v, vector_mul(dot_product(v, n), n)));
 
@@ -195,11 +198,16 @@ fn scatter_color(c0: Color, material: Material) -> Color {
 }
 
 fn scatter_ray(
-    v: Vector,          // Direction of the incoming ray.
-    p: Vector,          // Point of impact.
-    n: Vector,          // Unit surface normal at the point of impact.
-    material: Material, // Surface material.
-    s0: i64             // State of the PRNG.
+    // Direction of the incoming ray.
+    v: Vector,
+    // Point of impact.
+    p: Vector,
+    // Unit surface normal at the point of impact.
+    n: Vector,
+    // Surface material.
+    material: Material,
+    // State of the PRNG.
+    s0: i64
 ) -> RandomRay {
     match material {
         Material::Dielectric(r) => {
@@ -245,22 +253,35 @@ fn scatter_ray(
 }
 
 struct CameraSpec(
-    Vector, // Center of the lens.
-    f64,    // Angle of view.
-    f64,    // Diameter of the lens.
-    Vector, // Center of the focal plane.
-    Vector, // Upward direction.
-    i64,    // Width in pixels.
-    i64     // Height in pixels.
+    // Center of the lens.
+    Vector,
+    // Angle of view.
+    f64,
+    // Diameter of the lens.
+    f64,
+    // Center of the focal plane.
+    Vector,
+    // Upward direction.
+    Vector,
+    // Width in pixels.
+    i64,
+    // Height in pixels.
+    i64
 );
 
 struct Camera(
-    Vector, // Center of the lens.
-    f64,    // Aperture.
-    Vector, // Origin of the focal plane.
-    Vector, // Unit vector in x-direction.
-    Vector, // Unit vector in y-direction.
-    f64     // Side length of a pixel.
+    // Center of the lens.
+    Vector,
+    // Aperture.
+    f64,
+    // Origin of the focal plane.
+    Vector,
+    // Unit vector in x-direction.
+    Vector,
+    // Unit vector in y-direction.
+    Vector,
+    // Side length of a pixel.
+    f64
 );
 
 fn make_camera_from_spec(spec: CameraSpec) -> Camera {
@@ -320,10 +341,14 @@ fn print_ppm_color(c: Color) -> () {
 }
 
 struct Hit(
-    f64,      // Time.
-    Vector,   // Point of impact.
-    Vector,   // Outward-facing unit surface normal at the point of impact.
-    Material  // Surface material.
+    // Time.
+    f64,
+    // Point of impact.
+    Vector,
+    // Outward-facing unit surface normal at the point of impact.
+    Vector,
+    // Surface material.
+    Material
 );
 
 enum MaybeHit {
@@ -432,9 +457,12 @@ fn render_pixel_loop(
     camera: Camera,
     i: i64,
     j: i64,
-    k: i64,    // Loop variable.
-    c0: Color, // Accumulator.
-    s0: i64    // State of the PRNG.
+    // Loop variable.
+    k: i64,
+    // Accumulator.
+    c0: Color,
+    // State of the PRNG.
+    s0: i64
 ) -> RandomColor {
     if k >= 100 {
         RandomColor(color_mul(1.0 / 100.0, c0), s0)
