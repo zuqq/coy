@@ -45,8 +45,7 @@ privateFunction n' metadata t' body = do
             { LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private
             , LLVM.AST.Global.returnType = t'
             , LLVM.AST.Global.name = n'
-            , LLVM.AST.Global.parameters =
-                (zipWith decorateArg ans' metadata, False)
+            , LLVM.AST.Global.parameters = (zipWith decorateArg ans' metadata, False)
             , LLVM.AST.Global.basicBlocks = bs'
             }
 
@@ -68,14 +67,13 @@ privateConstGlobal
     -> LLVM.AST.Constant.Constant
     -> m LLVM.AST.Operand
 privateConstGlobal x' t' c' = do
-    let globalVariableDef' =
-            LLVM.AST.GlobalDefinition LLVM.AST.globalVariableDefaults
-                { LLVM.AST.Global.name = x'
-                , LLVM.AST.Global.type' = t'
-                , LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private
-                , LLVM.AST.Global.isConstant = True
-                , LLVM.AST.Global.initializer = Just c'
-                }
+    let globalVariableDef' = LLVM.AST.GlobalDefinition LLVM.AST.globalVariableDefaults
+            { LLVM.AST.Global.name = x'
+            , LLVM.AST.Global.type' = t'
+            , LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private
+            , LLVM.AST.Global.isConstant = True
+            , LLVM.AST.Global.initializer = Just c'
+            }
 
     emitDefn globalVariableDef'
 
@@ -96,16 +94,14 @@ privateGlobalStringPtr s x' = do
 
     let t' = LLVM.AST.ArrayType (genericLength payload) char
 
-    let globalVariableDef' =
-            LLVM.AST.GlobalDefinition LLVM.AST.globalVariableDefaults
-                { LLVM.AST.Global.name = x'
-                , LLVM.AST.Global.type' = t'
-                , LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private
-                , LLVM.AST.Global.isConstant = True
-                , LLVM.AST.Global.initializer =
-                    Just (LLVM.AST.Constant.Array char payload)
-                , LLVM.AST.Global.unnamedAddr = Just LLVM.AST.GlobalAddr
-                }
+    let globalVariableDef' = LLVM.AST.GlobalDefinition LLVM.AST.globalVariableDefaults
+            { LLVM.AST.Global.name = x'
+            , LLVM.AST.Global.type' = t'
+            , LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private
+            , LLVM.AST.Global.isConstant = True
+            , LLVM.AST.Global.initializer = Just (LLVM.AST.Constant.Array char payload)
+            , LLVM.AST.Global.unnamedAddr = Just LLVM.AST.GlobalAddr
+            }
 
     emitDefn globalVariableDef'
 
