@@ -2,14 +2,28 @@ module Coy.ParseSpec (spec) where
 
 import Data.Foldable (for_)
 import System.Directory (listDirectory)
-import System.FilePath ((</>), takeExtension)
-import Test.Hspec (
-    Expectation, Spec, describe, expectationFailure, it, runIO, shouldBe)
+import System.FilePath ((</>), takeBaseName, takeExtension)
+import Test.Hspec (Expectation, Spec, describe, expectationFailure, it, runIO, shouldBe)
 
 import qualified Data.ByteString as ByteString
 import qualified Data.Text.Encoding as Text.Encoding
 
 import Coy.Parse
+
+data TestCase = TestCase
+    { testCaseName :: String
+    , testCaseInputFile :: FilePath
+    }
+
+getTestCases :: FilePath -> IO [TestCase]
+getTestCases inputDir = fmap getTestCase . filter isCoySourceFile <$> listDirectory inputDir
+  where
+    isCoySourceFile = (== ".coy") . takeExtension
+
+    getTestCase inputFileName = TestCase
+        { testCaseName = takeBaseName inputFileName
+        , testCaseInputFile = inputDir </> inputFileName
+        }
 
 shouldParse :: FilePath -> Expectation
 shouldParse filePath = do
@@ -18,7 +32,7 @@ shouldParse filePath = do
         Left e -> expectationFailure (show e)
         Right s ->
             case parse filePath s of
-                Left e -> expectationFailure (show e)
+                Left e -> expectationFailure $ "Expected success, got: " <> show e
                 Right _ -> mempty
 
 shouldNotParse :: FilePath -> Expectation
@@ -29,20 +43,16 @@ shouldNotParse filePath = do
         Right s ->
             case parse filePath s of
                 Left _ -> mempty
-                Right _ -> expectationFailure "Unexpected successful parse."
-
-isCoySourceFile :: FilePath -> Bool
-isCoySourceFile fileName = takeExtension fileName == ".coy"
-
-getCoySourceFileNames :: FilePath -> IO [FilePath]
-getCoySourceFileNames directory =
-    fmap (filter isCoySourceFile) (listDirectory directory)
+                Right e -> expectationFailure $ "Expected failure, got: " <> show e
 
 forDirectory :: FilePath -> (FilePath -> Expectation) -> Spec
-forDirectory directory f = do
-    fileNames <- runIO (getCoySourceFileNames directory)
-    describe directory (
-        for_ fileNames (\fileName -> it fileName (f (directory </> fileName))))
+forDirectory directory check = do
+    testCases <- runIO $ getTestCases directory
+
+    describe directory $
+        for_ testCases $ \testCase ->
+            it (testCaseName testCase) $ do
+                check (testCaseInputFile testCase)
 
 spec :: Spec
 spec = do
