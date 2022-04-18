@@ -1,54 +1,106 @@
-import Data.Foldable (for_)
+import Data.ByteString.Lazy (ByteString)
+import Data.Foldable (for_, traverse_)
 import System.Directory (listDirectory, makeAbsolute)
-import System.FilePath ((<.>), (</>), dropExtension, replaceExtension, takeExtension, takeFileName)
+import System.FilePath ((<.>), (</>), replaceExtension, takeBaseName, takeExtension)
 import System.IO.Temp (withTempDirectory)
-import System.Process.Typed (nullStream, proc, readProcess, runProcess_, setStderr, setWorkingDir)
-import Test.Hspec (describe, it, shouldBe)
+import System.Process.Typed (nullStream, proc, readProcess, runProcess_, setStderr, setStdout, setWorkingDir)
+import Test.Hspec (Spec, aroundAll, describe, it, parallel, runIO, shouldBe)
 import Test.Hspec.Runner (defaultConfig, evaluateSummary, runSpec)
 
 import qualified Data.ByteString.Lazy as ByteString.Lazy
 
 import Paths_coy (getBinDir)
 
+data TestCase = TestCase
+    { testCaseName :: String
+    , testCaseInputFile :: FilePath
+    , testCaseGoldenFile :: FilePath
+    }
+
+getTestCases :: FilePath -> IO [TestCase]
+getTestCases inputDir = fmap getTestCase . filter isCoySourceFile <$> listDirectory inputDir
+  where
+    isCoySourceFile = (== ".coy") . takeExtension
+
+    getTestCase inputFileName = TestCase
+        { testCaseName = takeBaseName inputFileName
+        , testCaseInputFile = inputDir </> inputFileName
+        , testCaseGoldenFile = inputDir </> replaceExtension inputFileName ".stdout"
+        }
+
+runIn
+    :: FilePath
+    -- ^ Working directory.
+    -> FilePath
+    -- ^ Executable.
+    -> [String]
+    -- ^ Arguments.
+    -> IO ()
+runIn workingDir executable arguments =
+    runProcess_ $
+        setWorkingDir workingDir $
+            proc executable arguments
+
+runSilentlyIn
+    :: FilePath
+    -- ^ Working directory.
+    -> FilePath
+    -- ^ Executable.
+    -> [String]
+    -- ^ Arguments.
+    -> IO ()
+runSilentlyIn workingDir executable arguments =
+    runProcess_ $
+        setStdout nullStream $
+            setStderr nullStream $
+                setWorkingDir workingDir $
+                    proc executable arguments
+
+compileAndRunIn
+    :: FilePath
+    -- ^ Working directory.
+    -> FilePath
+    -- ^ Path to the @coy@ executable.
+    -> FilePath
+    -- ^ Input file.
+    -> IO ByteString
+compileAndRunIn workingDir coy inputFile = do
+    -- Run @coy@.
+    runIn workingDir coy [inputFile]
+
+    -- Run @clang@.
+    runSilentlyIn workingDir "clang" ["-O3", "-o", result1, result0]
+
+    -- Run the resulting executable.
+    (_, actual, _) <- readProcess (proc result1 mempty)
+
+    pure actual
+  where
+    -- Path to the result of @coy@.
+    result0 = workingDir </> takeBaseName inputFile <.> ".ll"
+
+    -- Path to the result of @clang@.
+    result1 = workingDir </> takeBaseName inputFile
+
+spec :: Spec
+spec = do
+    binDir <- runIO getBinDir
+
+    inputDir <- runIO $ makeAbsolute "./golden/data"
+
+    testCases <- runIO $ getTestCases inputDir
+
+    aroundAll (withTempDirectory inputDir mempty) $
+        describe "golden" $ do
+            for_ testCases $ \testCase ->
+                it (testCaseName testCase) $ \workingDir -> do
+                    actual <- compileAndRunIn workingDir (binDir </> "coy-exe") (testCaseInputFile testCase)
+
+                    expected <- ByteString.Lazy.readFile (testCaseGoldenFile testCase)
+
+                    actual `shouldBe` expected
+
 main :: IO ()
 main = do
-    goldenDirectory <- makeAbsolute "./golden"
-
-    let goldenDataDirectory = goldenDirectory </> "data"
-
-    fileNames <- getCoySourceFileNames goldenDataDirectory
-
-    executableDirectory <- getBinDir
-
-    let executable = executableDirectory </> "coy-exe"
-
-    withTempDirectory goldenDirectory "data" (\tempDirectory ->
-        runAndEvaluate (
-            describe "golden/data" (
-                for_ fileNames (\fileName -> it fileName (do
-                    let filePath = goldenDataDirectory </> fileName
-
-                    runProcess_ (setWorkingDir tempDirectory (proc executable [filePath]))
-
-                    let executableFilePath = tempDirectory </> dropExtension fileName
-
-                    let resultFilePath = tempDirectory </> dropExtension fileName <.> ".ll"
-
-                    runProcess_ (
-                        setStderr nullStream (
-                            proc "clang" ["-O3", "-o", executableFilePath, resultFilePath]))
-
-                    (_, actual, _) <- readProcess (proc executableFilePath mempty)
-
-                    expected <- ByteString.Lazy.readFile (replaceExtension filePath ".stdout")
-
-                    actual `shouldBe` expected)))))
-  where
-    isCoySourceFile fileName = takeExtension fileName == ".coy"
-
-    getCoySourceFileNames directory =
-        fmap (filter isCoySourceFile) (listDirectory directory)
-
-    runAndEvaluate spec = do
-        summary <- runSpec spec defaultConfig
-        evaluateSummary summary
+    summary <- runSpec spec defaultConfig
+    evaluateSummary summary
