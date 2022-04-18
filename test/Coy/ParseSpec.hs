@@ -3,7 +3,7 @@ module Coy.ParseSpec (spec) where
 import Data.Foldable (for_)
 import System.Directory (listDirectory)
 import System.FilePath ((</>), takeBaseName, takeExtension)
-import Test.Hspec (Expectation, Spec, describe, expectationFailure, it, runIO, shouldBe)
+import Test.Hspec (Expectation, Spec, describe, expectationFailure, it, runIO)
 
 import qualified Data.ByteString as ByteString
 import qualified Data.Text.Encoding as Text.Encoding

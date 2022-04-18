@@ -1,10 +1,10 @@
 import Data.ByteString.Lazy (ByteString)
-import Data.Foldable (for_, traverse_)
+import Data.Foldable (for_)
 import System.Directory (listDirectory, makeAbsolute)
 import System.FilePath ((<.>), (</>), replaceExtension, takeBaseName, takeExtension)
 import System.IO.Temp (withTempDirectory)
 import System.Process.Typed (nullStream, proc, readProcess, runProcess_, setStderr, setStdout, setWorkingDir)
-import Test.Hspec (Spec, aroundAll, describe, it, parallel, runIO, shouldBe)
+import Test.Hspec (Spec, aroundAll, describe, it, runIO, shouldBe)
 import Test.Hspec.Runner (defaultConfig, evaluateSummary, runSpec)
 
 import qualified Data.ByteString.Lazy as ByteString.Lazy
