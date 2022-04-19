@@ -37,9 +37,9 @@ runIn
     -- ^ Arguments.
     -> IO ()
 runIn workingDir executable arguments =
-    runProcess_ $
-        setWorkingDir workingDir $
-            proc executable arguments
+    runProcess_
+    $ setWorkingDir workingDir
+    $ proc executable arguments
 
 runSilentlyIn
     :: FilePath
@@ -50,11 +50,11 @@ runSilentlyIn
     -- ^ Arguments.
     -> IO ()
 runSilentlyIn workingDir executable arguments =
-    runProcess_ $
-        setStdout nullStream $
-            setStderr nullStream $
-                setWorkingDir workingDir $
-                    proc executable arguments
+    runProcess_
+    $ setStdout nullStream
+    $ setStderr nullStream
+    $ setWorkingDir workingDir
+    $ proc executable arguments
 
 compileAndRunIn
     :: FilePath
