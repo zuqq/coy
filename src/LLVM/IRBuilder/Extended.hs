@@ -36,10 +36,10 @@ privateFunction
 privateFunction n' metadata t' body = do
     let ats' = fmap fst metadata
 
-    (ans', bs') <- runIRBuilderT emptyIRBuilder (do
+    (ans', bs') <- runIRBuilderT emptyIRBuilder $ do
         ans' <- traverse (const fresh) metadata
         body (zipWith LLVM.AST.LocalReference ats' ans')
-        pure ans')
+        pure ans'
 
     let fnDef' = LLVM.AST.GlobalDefinition LLVM.AST.functionDefaults
             { LLVM.AST.Global.linkage = LLVM.AST.Linkage.Private
