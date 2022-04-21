@@ -18,7 +18,7 @@ data TestCase = TestCase
     }
 
 getTestCases :: FilePath -> IO [TestCase]
-getTestCases inputDir = fmap getTestCase . filter isCoySourceFile <$> listDirectory inputDir
+getTestCases inputDir = fmap (fmap getTestCase . filter isCoySourceFile) (listDirectory inputDir)
   where
     isCoySourceFile = (== ".coy") . takeExtension
 
@@ -86,9 +86,9 @@ spec :: Spec
 spec = do
     binDir <- runIO getBinDir
 
-    inputDir <- runIO $ makeAbsolute "./golden/data"
+    inputDir <- runIO (makeAbsolute "./golden/data")
 
-    testCases <- runIO $ getTestCases inputDir
+    testCases <- runIO (getTestCases inputDir)
 
     aroundAll (withTempDirectory inputDir mempty) $
         describe "golden" $ do
