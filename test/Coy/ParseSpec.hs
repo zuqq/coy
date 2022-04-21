@@ -16,7 +16,7 @@ data TestCase = TestCase
     }
 
 getTestCases :: FilePath -> IO [TestCase]
-getTestCases inputDir = fmap getTestCase . filter isCoySourceFile <$> listDirectory inputDir
+getTestCases inputDir = fmap (fmap getTestCase . filter isCoySourceFile) (listDirectory inputDir)
   where
     isCoySourceFile = (== ".coy") . takeExtension
 
@@ -32,7 +32,7 @@ shouldParse filePath = do
         Left e -> expectationFailure (show e)
         Right s ->
             case parse filePath s of
-                Left e -> expectationFailure $ "Expected success, got: " <> show e
+                Left e -> expectationFailure ("Expected success, got: " <> show e)
                 Right _ -> mempty
 
 shouldNotParse :: FilePath -> Expectation
@@ -43,15 +43,15 @@ shouldNotParse filePath = do
         Right s ->
             case parse filePath s of
                 Left _ -> mempty
-                Right e -> expectationFailure $ "Expected failure, got: " <> show e
+                Right e -> expectationFailure ("Expected failure, got: " <> show e)
 
 forDirectory :: FilePath -> (FilePath -> Expectation) -> Spec
 forDirectory directory check = do
-    testCases <- runIO $ getTestCases directory
+    testCases <- runIO (getTestCases directory)
 
     describe directory $
         for_ testCases $ \testCase ->
-            it (testCaseName testCase) $ do
+            it (testCaseName testCase) $
                 check (testCaseInputFile testCase)
 
 spec :: Spec
