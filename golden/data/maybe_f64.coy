@@ -1,5 +1,6 @@
 enum MaybeF64 {
-    None(), Some(f64)
+    None(),
+    Some(f64)
 }
 
 fn from_maybe_f64(default: f64, a: MaybeF64) -> f64 {
