@@ -1,3 +1,5 @@
+{-# LANGUAGE BlockArguments #-}
+
 import Data.ByteString.Lazy (ByteString)
 import Data.Foldable (for_)
 import System.Directory (listDirectory, makeAbsolute)
@@ -91,9 +93,9 @@ spec = do
     testCases <- runIO (getTestCases inputDir)
 
     aroundAll (withTempDirectory inputDir mempty) $
-        describe "golden" $ do
-            for_ testCases $ \testCase ->
-                it (testCaseName testCase) $ \workingDir -> do
+        describe "golden" do
+            for_ testCases \testCase ->
+                it (testCaseName testCase) \workingDir -> do
                     actual <- compileAndRunIn workingDir (binDir </> "coy-exe") (testCaseInputFile testCase)
 
                     expected <- ByteString.Lazy.readFile (testCaseGoldenFile testCase)

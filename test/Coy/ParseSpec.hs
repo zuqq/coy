@@ -1,3 +1,5 @@
+{-# LANGUAGE BlockArguments #-}
+
 module Coy.ParseSpec (spec) where
 
 import Data.Foldable (for_)
@@ -50,7 +52,7 @@ forDirectory directory check = do
     testCases <- runIO (getTestCases directory)
 
     describe directory $
-        for_ testCases $ \testCase ->
+        for_ testCases \testCase ->
             it (testCaseName testCase) $
                 check (testCaseInputFile testCase)
 

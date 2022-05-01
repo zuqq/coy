@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 import System.Environment (getArgs)
@@ -38,5 +39,5 @@ main = do
 
                     let m = codegen n checked
 
-                    withFile (n <.> "ll") WriteMode (\handle ->
-                        Text.Lazy.IO.hPutStrLn handle (LLVM.Pretty.ppllvm m))
+                    withFile (n <.> "ll") WriteMode \handle ->
+                        Text.Lazy.IO.hPutStrLn handle (LLVM.Pretty.ppllvm m)

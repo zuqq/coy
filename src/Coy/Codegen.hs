@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
@@ -43,16 +44,16 @@ data Context = Context
     }
 
 consts :: Lens' Context (Map Text LLVM.AST.Operand)
-consts = lens _consts (\s cs -> s {_consts = cs})
+consts = lens _consts \s cs -> s {_consts = cs}
 
 strings :: Lens' Context (Vector LLVM.AST.Operand)
-strings = lens _strings (\s ss -> s {_strings = ss})
+strings = lens _strings \s ss -> s {_strings = ss}
 
 fns :: Lens' Context (Map Text LLVM.AST.Operand)
-fns = lens _fns (\s fs -> s {_fns = fs})
+fns = lens _fns \s fs -> s {_fns = fs}
 
 values :: Lens' Context (Map Text LLVM.AST.Operand)
-values = lens _values (\s vs -> s {_values = vs})
+values = lens _values \s vs -> s {_values = vs}
 
 type ModuleBuilder = LLVM.IRBuilder.ModuleBuilderT (State Context)
 
@@ -250,7 +251,7 @@ computeEnumSizes typeDefs = enumSizes
 
     enumVariantSize = totalSize tagSize
 
-    totalSize = foldl' (\x t -> x `alignedTo` alignment t + fieldSize t)
+    totalSize = foldl' \x t -> x `alignedTo` alignment t + fieldSize t
 
     fieldSize = \case
         Unit -> 0
@@ -268,9 +269,9 @@ builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBl
     void (defineType "unit" (LLVM.AST.StructureType False mempty))
 
     -- Define structs and enums.
-    for_ typeDefs (\case
+    for_ typeDefs \case
         StructDef n0 ts -> structDef n0 ts
-        EnumDef n0 vs -> enumDef n0 vs)
+        EnumDef n0 vs -> enumDef n0 vs
 
     -- Define constants.
     traverse_ constDef constDefs
@@ -285,9 +286,9 @@ builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBl
     void (LLVM.IRBuilder.externVarArgs printfName printfArgTypes printfReturnType)
 
     -- Declare intrinsic functions.
-    for_ intrinsicFns (\(n, n', ats', t') -> do
+    for_ intrinsicFns \(n, n', ats', t') -> do
         reference <- LLVM.IRBuilder.extern n' ats' t'
-        bindFn n reference)
+        bindFn n reference
 
     -- Add non-main functions to the 'Context'.
     zipWithM_ (\fd fn -> bindFn (fnDefName fd) fn) otherFnDefs otherFns
@@ -344,14 +345,14 @@ builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBl
         void (defineType n t')
 
         -- Define the variant types.
-        ifor_ vs (\i (EnumVariant _ ts) ->
+        ifor_ vs \i (EnumVariant _ ts) ->
             let vn = enumName n0 (Just i) in
 
             let ts' = fmap reifyType (toList ts) in
 
             let vt' = LLVM.AST.StructureType False (tagType : ts') in
 
-            defineType vn vt')
+            defineType vn vt'
 
     constDef (ConstDef (ConstDecl x t) c) = do
         let x' = reifyName x
@@ -386,9 +387,9 @@ fnDef (FnDef (FnDecl n as t) b) =
 
         in let body operands = do
                 LLVM.IRBuilder.emitBlockStart "entry"
-                namespaced (do
+                namespaced do
                     zipWithM_ bindValue ans (tail operands)
-                    tailBlock b)
+                    tailBlock b
 
         in defineFn metadata' LLVM.AST.Type.void body
     else
@@ -396,9 +397,9 @@ fnDef (FnDef (FnDecl n as t) b) =
 
         in let body operands = do
                 LLVM.IRBuilder.emitBlockStart "entry"
-                namespaced (do
+                namespaced do
                     zipWithM_ bindValue ans operands
-                    tailBlock b)
+                    tailBlock b
 
         in defineFn metadata t' body
 
@@ -443,13 +444,13 @@ constructStruct
     -> IRBuilder LLVM.AST.Operand
 constructStruct n ets = do
     p <- LLVM.IRBuilder.alloca (reifyStruct n) Nothing 0
-    Vector.iforM_ ets (\i (e, at) -> do
+    Vector.iforM_ ets \i (e, at) -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral i)]
         a <- exprWithoutBlock e
         if hasPointerOperandType at then
             copyTo q a (reifyType at)
         else
-            LLVM.IRBuilder.store q 0 a)
+            LLVM.IRBuilder.store q 0 a
     pure p
 
 constructEnumVariant
@@ -465,13 +466,13 @@ constructEnumVariant n i ets = do
     tagPointer <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr tagType)
     LLVM.IRBuilder.store tagPointer 0 (LLVM.AST.ConstantOperand (tagLit i))
     p <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr (reifyEnum n (Just i)))
-    Vector.iforM_ ets (\k (e, at) -> do
+    Vector.iforM_ ets \k (e, at) -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral k + 1)]
         a <- exprWithoutBlock e
         if hasPointerOperandType at then
             copyTo q a (reifyType at)
         else
-            LLVM.IRBuilder.store q 0 a)
+            LLVM.IRBuilder.store q 0 a
     pure p0
 
 destructureStruct
@@ -481,13 +482,13 @@ destructureStruct
     -- ^ Pointer to the value.
     -> IRBuilder ()
 destructureStruct xts p =
-    Vector.iforM_ xts (\k (x, at) -> do
+    Vector.iforM_ xts \k (x, at) -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral k)]
         if hasPointerOperandType at then
             bindValue x q
         else do
             b <- LLVM.IRBuilder.load q 0
-            bindValue x b)
+            bindValue x b
 
 destructureEnumVariant
     :: Text
@@ -501,13 +502,13 @@ destructureEnumVariant
     -> IRBuilder ()
 destructureEnumVariant n i xts p0 = do
     p <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr (reifyEnum n (Just i)))
-    Vector.iforM_ xts (\k (x, at) -> do
+    Vector.iforM_ xts \k (x, at) -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral k + 1)]
         if hasPointerOperandType at then
             bindValue x q
         else do
             b <- LLVM.IRBuilder.load q 0
-            bindValue x b)
+            bindValue x b
 
 block :: Block 'Checked -> IRBuilder LLVM.AST.Operand
 block (Block ss e) = do
@@ -536,17 +537,17 @@ exprWithBlock = \case
         LLVM.IRBuilder.condBr a thenInLabel elseInLabel
 
         thenInLabel <- LLVM.IRBuilder.block
-        thenOut <- namespaced (do
+        thenOut <- namespaced do
             thenValue <- block thenBlock
             thenOutLabel <- LLVM.IRBuilder.currentBlock
-            pure (thenValue, thenOutLabel))
+            pure (thenValue, thenOutLabel)
         LLVM.IRBuilder.br joinLabel
 
         elseInLabel <- LLVM.IRBuilder.block
-        elseOut <- namespaced (do
+        elseOut <- namespaced do
             elseValue <- block elseBlock
             elseOutLabel <- LLVM.IRBuilder.currentBlock
-            pure (elseValue, elseOutLabel))
+            pure (elseValue, elseOutLabel)
         LLVM.IRBuilder.br joinLabel
 
         joinLabel <- LLVM.IRBuilder.block
@@ -558,14 +559,14 @@ exprWithBlock = \case
         let outgoing = [(tagLit i, inLabel) | ((i, inLabel), _) <- branches]
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
 
-        branches <- ifor as (\i (CheckedMatchArm xts e) -> do
+        branches <- ifor as \i (CheckedMatchArm xts e) -> do
             inLabel <- LLVM.IRBuilder.block
-            result <- namespaced (do
+            result <- namespaced do
                 destructureEnumVariant n i xts p0
-                expr e)
+                expr e
             outLabel <- LLVM.IRBuilder.currentBlock
             LLVM.IRBuilder.br joinLabel
-            pure ((i, inLabel), (result, outLabel)))
+            pure ((i, inLabel), (result, outLabel))
 
         defaultLabel <- LLVM.IRBuilder.block
         -- The default block is unreachable because the match expression covers
@@ -627,22 +628,22 @@ exprWithoutBlock = \case
                     BitOr -> LLVM.IRBuilder.or
                     Icmp p ->
                         LLVM.IRBuilder.icmp
-                            (case p of
+                            case p of
                                 Eq -> LLVM.AST.IntegerPredicate.EQ
                                 Ne -> LLVM.AST.IntegerPredicate.NE
                                 Lt -> LLVM.AST.IntegerPredicate.SLT
                                 Gt -> LLVM.AST.IntegerPredicate.SGT
                                 Le -> LLVM.AST.IntegerPredicate.SLE
-                                Ge -> LLVM.AST.IntegerPredicate.SGE)
+                                Ge -> LLVM.AST.IntegerPredicate.SGE
                     Fcmp p ->
                         LLVM.IRBuilder.fcmp
-                            (case p of
+                            case p of
                                 Eq -> LLVM.AST.FloatingPointPredicate.OEQ
                                 Ne -> LLVM.AST.FloatingPointPredicate.ONE
                                 Lt -> LLVM.AST.FloatingPointPredicate.OLT
                                 Gt -> LLVM.AST.FloatingPointPredicate.OGT
                                 Le -> LLVM.AST.FloatingPointPredicate.OLE
-                                Ge -> LLVM.AST.FloatingPointPredicate.OGE)
+                                Ge -> LLVM.AST.FloatingPointPredicate.OGE
                     And -> LLVM.IRBuilder.and
                     Or -> LLVM.IRBuilder.or
         instruction a0 a1
@@ -715,12 +716,12 @@ tailExprWithBlock = \case
         tagValue <- LLVM.IRBuilder.load tagPointer 0
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
 
-        outgoing <- ifor as (\i (CheckedMatchArm xts e) -> do
+        outgoing <- ifor as \i (CheckedMatchArm xts e) -> do
             label <- LLVM.IRBuilder.block
-            namespaced (do
+            namespaced do
                 destructureEnumVariant n i xts p0
-                tailExpr e)
-            pure (tagLit i, label))
+                tailExpr e
+            pure (tagLit i, label)
 
         defaultLabel <- LLVM.IRBuilder.block
         LLVM.IRBuilder.unreachable
