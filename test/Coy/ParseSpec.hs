@@ -51,9 +51,9 @@ forDirectory :: FilePath -> (FilePath -> Expectation) -> Spec
 forDirectory directory check = do
     testCases <- runIO (getTestCases directory)
 
-    describe directory $
+    describe directory do
         for_ testCases \testCase ->
-            it (testCaseName testCase) $
+            it (testCaseName testCase) do
                 check (testCaseInputFile testCase)
 
 spec :: Spec

@@ -92,7 +92,7 @@ spec = do
 
     testCases <- runIO (getTestCases inputDir)
 
-    aroundAll (withTempDirectory inputDir mempty) $
+    aroundAll (withTempDirectory inputDir mempty) do
         describe "golden" do
             for_ testCases \testCase ->
                 it (testCaseName testCase) \workingDir -> do
