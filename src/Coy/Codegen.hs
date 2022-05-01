@@ -76,7 +76,10 @@ findString :: Int -> IRBuilder LLVM.AST.Operand
 findString i = fmap (Vector.! i) (use strings)
 
 bindFn :: Text -> LLVM.AST.Operand -> ModuleBuilder ()
-bindFn n t = fns %= Map.insert n t
+bindFn n fn = fns %= Map.insert n fn
+
+bindFnDef :: FnDef 'Checked -> LLVM.AST.Operand -> ModuleBuilder ()
+bindFnDef = bindFn . fnDefName
 
 findFn :: Text -> IRBuilder LLVM.AST.Operand
 findFn n = fmap (Map.! n) (use fns)
@@ -291,7 +294,7 @@ builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBl
         bindFn n reference
 
     -- Add non-main functions to the 'Context'.
-    zipWithM_ (\fd fn -> bindFn (fnDefName fd) fn) otherFnDefs otherFns
+    zipWithM_ bindFnDef otherFnDefs otherFns
 
     -- Add the main function to the 'Context'.
     bindFn "main" mainFn
