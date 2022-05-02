@@ -34,7 +34,7 @@ shouldParse filePath = do
         Left e -> expectationFailure (show e)
         Right s ->
             case parse filePath s of
-                Left e -> expectationFailure ("Expected success, got: " <> show e)
+                Left e -> expectationFailure ("Expected success, got:\n\n" <> e)
                 Right _ -> mempty
 
 shouldNotParse :: FilePath -> Expectation
@@ -45,7 +45,7 @@ shouldNotParse filePath = do
         Right s ->
             case parse filePath s of
                 Left _ -> mempty
-                Right e -> expectationFailure ("Expected failure, got: " <> show e)
+                Right e -> expectationFailure ("Expected failure, got:\n\n" <> show e)
 
 forDirectory :: FilePath -> (FilePath -> Expectation) -> Spec
 forDirectory directory check = do
