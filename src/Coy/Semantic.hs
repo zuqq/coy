@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
@@ -8,13 +9,13 @@ module Coy.Semantic where
 
 import Algebra.Graph (stars)
 import Algebra.Graph.ToGraph (topSort)
-import Control.Monad (when, zipWithM)
+import Control.Monad (void, when, zipWithM)
 import Control.Monad.Error.Class (MonadError (throwError))
 import Control.Monad.Trans.Except (Except, runExcept)
 import Control.Monad.Trans.State.Strict (StateT, evalStateT, runStateT)
-import Data.Bifunctor (first)
+import Data.Bifunctor (bimap, first)
 import Data.Containers.ListUtils (nubOrd)
-import Data.Foldable (toList, traverse_)
+import Data.Foldable (for_, toList, traverse_)
 import Data.List (partition, sort, sortOn)
 import Data.List.Index (indexed)
 import Data.List.NonEmpty (NonEmpty)
@@ -29,6 +30,7 @@ import Text.Megaparsec
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+import qualified Data.Text as Text
 import qualified Data.Text.Lazy as Text.Lazy
 import qualified Data.Text.Lazy.Builder as Text.Lazy.Builder
 import qualified Data.Vector as Vector
@@ -64,8 +66,8 @@ values :: Lens' Context (Map Text (Type 'Checked))
 values = lens _values (\c vs -> c {_values = vs})
 
 data SemanticError
-    = RedefinedTypes [TypeDef 'Unchecked]
-    | RedefinedFns [FnDecl 'Unchecked]
+    = RedefinedType (TypeDef 'Unchecked)
+    | RedefinedFn (FnDef 'Unchecked)
     | StructOrEnumNotFound Text
     | TypeCycle (NonEmpty (TypeDef 'Unchecked))
     | StructNotFound Text
@@ -323,25 +325,40 @@ semantic filePath s = first (errorBundlePretty . wrap) . checkModule
 
 checkModule :: Module 'Unchecked -> Either SemanticError (Module 'Checked)
 checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
-    let constDecls = [d | ConstDef d _ <- constDefs]
+    -- Check for redefined types.
+    let typeDefsByName = groupBy typeDefName typeDefs
 
-    let fnDecls = [d | FnDef d _ <- fnDefs]
+    for_ typeDefsByName \(_, ds) ->
+        case ds of
+            _ : d : _ -> throwError (RedefinedType d)
+            _ -> pure ()
 
-    (typeDefs', constDecls', fnDecls') <- resolveNames (typeDefs, constDecls, fnDecls)
+    -- Check for redefined functions.
+    let fnDefsByName = groupBy fnDefName fnDefs
 
-    let ss = Map.fromList [(n, ts) | StructDef n ts <- typeDefs']
+    for_ fnDefsByName \(_, ds) ->
+        case ds of
+            _ : d : _ -> throwError (RedefinedFn d)
+            _ -> pure ()
 
-    let es = Map.fromList [(n, enumVariants vs) | EnumDef n vs <- typeDefs']
+    -- Resolve all types.
+    typeDefs' <- traverse resolveTypeDef typeDefs
 
-    let cs = Map.fromList [(n, t) | ConstDecl n t <- constDecls']
+    constDecls' <- traverse resolveConstDecl [d | ConstDef d _ <- constDefs]
 
-    let fs = Map.fromList (
-                intrinsicFns
-            <>  [(n, (fmap fnArgType as, t)) | FnDecl n as t <- fnDecls'])
+    fnDecls' <- traverse resolveFnDecl [d | FnDef d _ <- fnDefs]
 
-    let vs = mempty
+    -- Check that the type definition graph is acyclic.
+    void (first TypeCycle (sortTypeDefs typeDefs))
 
-    let context = Context ss es cs mempty fs vs
+    let context = Context
+            { _structs = Map.fromList [(n, ts) | StructDef n ts <- typeDefs']
+            , _enums = Map.fromList [(n, enumVariants vs) | EnumDef n vs <- typeDefs']
+            , _consts = Map.fromList [(n, t) | ConstDecl n t <- constDecls']
+            , _strings = mempty
+            , _fns = Map.fromList (intrinsicFns <> [(n, (fmap fnArgType as, t)) | FnDecl n as t <- fnDecls'])
+            , _values = mempty
+            }
 
     constDefs' <- evalSemantic (
         zipWithM constDef constDecls' [c | ConstDef _ c <- constDefs]) context
@@ -363,86 +380,70 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
                 throwError (MainFnDefTypeMismatch mainFnDef')
         _ -> throwError MainFnDefMissing
   where
-    enumVariants vs =
-        Map.fromList [(v, (i, ts)) | (i, EnumVariant v ts) <- indexed vs]
+    groupBy key = Map.toList . fmap ($ []) . Map.fromListWith (.) . fmap adapt
+      where
+        adapt value = (key value, (value :))
 
-type ModuleSig (u :: Status) = ([TypeDef u], [ConstDecl u], [FnDecl u])
+    structNames = Set.fromList [n | StructDef n _ <- typeDefs]
 
--- Preserves the order of the definitions or declarations in each group.
-resolveNames
-    :: ModuleSig 'Unchecked
-    -> Either SemanticError (ModuleSig 'Checked)
-resolveNames (tds, cds, fds) = do
-    let structNames = Set.fromList [n | StructDef n _ <- tds]
+    enumNames = Set.fromList [n | EnumDef n _ <- typeDefs]
 
-    let enumNames = Set.fromList [n | EnumDef n _ <- tds]
+    resolveType = \case
+        Unit -> pure Unit
+        Bool -> pure Bool
+        I64 -> pure I64
+        F64 -> pure F64
+        StructOrEnum n
+            | isStruct && isEnum -> error ("Internal error: `" <> Text.unpack n <> "` is both a struct and an enum.")
+            | isStruct -> pure (Struct n)
+            | isEnum -> pure (Enum n)
+            | otherwise -> throwError (StructOrEnumNotFound n)
+          where
+            isStruct = n `Set.member` structNames
 
-    let typeNames = structNames <> enumNames
+            isEnum = n `Set.member` enumNames
 
-    let fnNames = Set.fromList [n | FnDecl n _ _ <- fds]
-
-    -- Check that no type was redefined.
-    when
-        (Set.size typeNames /= length tds)
-        (throwError (RedefinedTypes tds))
-
-    -- Check that no function was redefined.
-    when
-        (Set.size fnNames /= length fds)
-        (throwError (RedefinedFns fds))
-
-    let findType = \case
-            Unit -> pure Unit
-            Bool -> pure Bool
-            I64 -> pure I64
-            F64 -> pure F64
-            StructOrEnum n
-                | n `Set.member` structNames -> pure (Struct n)
-                | n `Set.member` enumNames -> pure (Enum n)
-                | otherwise -> throwError (StructOrEnumNotFound n)
-
-    -- Name resolution for the type definitions.
-    tds' <- for tds (\case
+    resolveTypeDef = \case
         StructDef n ts -> do
-            ts' <- traverse findType ts
+            ts' <- traverse resolveType ts
             pure (StructDef n ts')
         EnumDef n vs -> do
-            vs' <- for vs (\(EnumVariant v ts) -> do
-                ts' <- traverse findType ts
-                pure (EnumVariant v ts'))
-            pure (EnumDef n vs'))
+            vs' <- traverse resolveEnumVariant vs
+            pure (EnumDef n vs')
+      where
+        resolveEnumVariant (EnumVariant v ts) = do
+            ts' <- traverse resolveType ts
+            pure (EnumVariant v ts')
 
-    -- Name resolution for the constant declarations.
-    cds' <- for cds (\(ConstDecl n t) -> do
-        t' <- findType t
-        pure (ConstDecl n t'))
+    resolveConstDecl (ConstDecl x t) = do
+        constDeclType <- resolveType t
+        pure (ConstDecl x constDeclType)
 
-    -- Name resolution for the function declarations.
-    fds' <- for fds (\(FnDecl n as t) -> do
-        as' <- for as (\(FnArg an at) -> do
-            at' <- findType at
-            pure (FnArg an at'))
-        t' <- findType t
-        pure (FnDecl n as' t'))
+    resolveFnDecl (FnDecl n as t) = do
+        as' <- traverse resolveFnArg as
+        t' <- resolveType t
+        pure (FnDecl n as' t')
+      where
+        resolveFnArg (FnArg an at) = do
+            at' <- resolveType at
+            pure (FnArg an at')
 
-    let number =
-            (Map.fromList [(typeDefName td, i) | (i, td) <- indexed tds] Map.!)
+    enumVariants vs = Map.fromList [(v, (i, ts)) | (i, EnumVariant v ts) <- indexed vs]
 
-    let neighbors = \case
-            StructDef _ ts -> [number n | StructOrEnum n <- toList ts]
-            EnumDef _ vs ->
-                [number n | EnumVariant _ ts <- vs, StructOrEnum n <- toList ts]
+-- This check comes after name resolution, because it uses the unsafe `Map.!`
+-- operator to look up labels.
+sortTypeDefs :: [TypeDef 'Unchecked] -> Either (NonEmpty (TypeDef 'Unchecked)) [TypeDef 'Unchecked]
+sortTypeDefs typeDefs = bimap (fmap fromLabel) (fmap fromLabel) (topSort graph)
+  where
+    toLabel = (Map.fromList [(typeDefName d, i) | (i, d) <- indexed typeDefs] Map.!)
 
-    let graph = stars [(number (typeDefName td), neighbors td) | td <- tds]
+    fromLabel = (Map.fromList (indexed typeDefs) Map.!)
 
-    let labelWithUncheckedTypeDef = (Map.fromList (indexed tds) Map.!)
+    neighbors = \case
+        StructDef _ ts -> [toLabel n | StructOrEnum n <- toList ts]
+        EnumDef _ vs -> [toLabel n | EnumVariant _ ts <- vs, StructOrEnum n <- toList ts]
 
-    -- Check that the type definitions are acyclic.
-    case topSort graph of
-        Left typeCycle ->
-            throwError
-                (TypeCycle (fmap labelWithUncheckedTypeDef typeCycle))
-        Right _ -> pure (tds', cds', fds')
+    graph = stars [(toLabel (typeDefName d), neighbors d) | d <- typeDefs]
 
 fnDef :: FnDecl 'Checked -> Block 'Unchecked -> Semantic (FnDef 'Checked)
 fnDef d@(FnDecl n as returnType) b = do
