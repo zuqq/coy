@@ -37,7 +37,7 @@ deriving instance Show (Module u)
 data TypeDef (u :: Status)
     = StructDef Text (Vector (Type u))
     | EnumDef Text [EnumVariant u]
-    deriving Show
+    deriving (Eq, Ord, Show)
 
 typeDefName :: TypeDef u -> Text
 typeDefName = \case
@@ -60,30 +60,30 @@ deriving instance Ord (Type u)
 deriving instance Show (Type u)
 
 data EnumVariant (u :: Status) = EnumVariant Text (Vector (Type u))
-    deriving Show
+    deriving (Eq, Ord, Show)
 
 data FnDef (u :: Status) = FnDef (FnDecl u) (Block u)
-    deriving Show
+    deriving (Eq, Ord, Show)
 
 fnDefName :: FnDef u -> Text
 fnDefName (FnDef (FnDecl n _ _) _) = n
 
 data FnDecl (u :: Status) = FnDecl Text (Vector (FnArg u)) (Type u)
-    deriving Show
+    deriving (Eq, Ord, Show)
 
 data FnArg (u :: Status) = FnArg Text (Type u)
-    deriving Show
+    deriving (Eq, Ord, Show)
 
 fnArgType :: FnArg u -> Type u
 fnArgType (FnArg _ at) = at
 
 data Block (u :: Status) = Block (Vector (Statement u)) (Expr u)
-    deriving Show
+    deriving (Eq, Ord, Show)
 
 data Statement (u :: Status)
     = LetStatement (Pattern u) (Expr u)
     | ExprStatement (Expr u)
-    deriving Show
+    deriving (Eq, Ord, Show)
 
 data Pattern (u :: Status) where
     VarPattern :: Text -> Pattern u
@@ -92,12 +92,14 @@ data Pattern (u :: Status) where
 
     CheckedStructPattern :: Vector (Text, Type 'Checked) -> Pattern 'Checked
 
+deriving instance Eq (Pattern u)
+deriving instance Ord (Pattern u)
 deriving instance Show (Pattern u)
 
 data Expr (u :: Status)
     = ExprWithBlock (ExprWithBlock u)
     | ExprWithoutBlock (ExprWithoutBlock u)
-    deriving Show
+    deriving (Eq, Ord, Show)
 
 data ExprWithBlock (u :: Status) where
     BlockExpr :: Block u -> ExprWithBlock u
@@ -119,6 +121,8 @@ data ExprWithBlock (u :: Status) where
         -- ^ Match arms, ordered by variant.
         -> ExprWithBlock 'Checked
 
+deriving instance Eq (ExprWithBlock u)
+deriving instance Ord (ExprWithBlock u)
 deriving instance Show (ExprWithBlock u)
 
 data MatchArm (u :: Status) where
@@ -140,6 +144,8 @@ data MatchArm (u :: Status) where
         -- ^ Right-hand side of the match arm.
         -> MatchArm 'Checked
 
+deriving instance Eq (MatchArm u)
+deriving instance Ord (MatchArm u)
 deriving instance Show (MatchArm u)
 
 data ExprWithoutBlock (u :: Status) where
@@ -224,6 +230,8 @@ data ExprWithoutBlock (u :: Status) where
         -- ^ Arguments.
         -> ExprWithoutBlock u
 
+deriving instance Eq (ExprWithoutBlock u)
+deriving instance Ord (ExprWithoutBlock u)
 deriving instance Show (ExprWithoutBlock u)
 
 data Lit
@@ -231,7 +239,7 @@ data Lit
     | BoolLit Bool
     | I64Lit Integer
     | F64Lit Double
-    deriving Show
+    deriving (Eq, Ord, Show)
 
 litType :: Lit -> Type u
 litType = \case
@@ -251,6 +259,8 @@ data UnaryOp (u :: Status) where
     AsF64 :: UnaryOp 'Checked
     AsI64 :: UnaryOp 'Checked
 
+deriving instance Eq (UnaryOp u)
+deriving instance Ord (UnaryOp u)
 deriving instance Show (UnaryOp u)
 
 data BinaryOp (u :: Status) where
@@ -284,6 +294,8 @@ data BinaryOp (u :: Status) where
     -- Left-associative: @x || y@
     Or :: BinaryOp u
 
+deriving instance Eq (BinaryOp u)
+deriving instance Ord (BinaryOp u)
 deriving instance Show (BinaryOp u)
 
 data Predicate
@@ -293,13 +305,15 @@ data Predicate
     | Gt
     | Le
     | Ge
-    deriving Show
+    deriving (Eq, Ord, Show)
 
 data FormatString (u :: Status) where
     UncheckedFormatString :: [FormatStringChunk] -> FormatString 'Unchecked
 
     CheckedFormatString :: Int -> FormatString 'Checked
 
+deriving instance Eq (FormatString u)
+deriving instance Ord (FormatString u)
 deriving instance Show (FormatString u)
 
 data FormatStringChunk = Hole | NonHole Text
@@ -309,7 +323,7 @@ data ConstDef (u :: Status) = ConstDef (ConstDecl u) (ConstInit u)
     deriving Show
 
 data ConstDecl (u :: Status) = ConstDecl Text (Type u)
-    deriving Show
+    deriving (Eq, Ord, Show)
 
 data ConstInit (u :: Status) where
     LitInit :: Lit -> ConstInit u
@@ -340,4 +354,6 @@ data ConstInit (u :: Status) where
         -- ^ Values for the components.
         -> ConstInit 'Checked
 
+deriving instance Eq (ConstInit u)
+deriving instance Ord (ConstInit u)
 deriving instance Show (ConstInit u)
