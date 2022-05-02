@@ -1,0 +1,9 @@
+struct S(i64);
+
+fn main() -> () {
+    let x = 1;
+
+    let S(a) = x;
+
+    ()
+}

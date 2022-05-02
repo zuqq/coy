@@ -1,0 +1,5 @@
+struct S(A);
+
+fn main() -> () {
+    ()
+}

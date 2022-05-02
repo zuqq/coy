@@ -1,0 +1,7 @@
+struct S0(S1);
+
+struct S1(S0);
+
+fn main() -> () {
+    ()
+}

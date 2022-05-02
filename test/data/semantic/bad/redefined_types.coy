@@ -1,0 +1,7 @@
+struct S();
+
+struct S();
+
+fn main() -> () {
+    ()
+}

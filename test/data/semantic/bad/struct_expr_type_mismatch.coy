@@ -1,0 +1,7 @@
+struct S(i64);
+
+fn main() -> () {
+    let x = S();
+
+    ()
+}
