@@ -344,9 +344,17 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
     -- Resolve all types.
     typeDefs' <- traverse resolveTypeDef typeDefs
 
-    constDecls' <- traverse resolveConstDecl [d | ConstDef d _ <- constDefs]
+    let constDecls = [d | ConstDef d _ <- constDefs]
 
-    fnDecls' <- traverse resolveFnDecl [d | FnDef d _ <- fnDefs]
+    let constInits = [c | ConstDef _ c <- constDefs]
+
+    constDecls' <- traverse resolveConstDecl constDecls
+
+    let fnDecls = [d | FnDef d _ <- fnDefs]
+
+    let fnBodies = [b | FnDef _ b <- fnDefs]
+
+    fnDecls' <- traverse resolveFnDecl fnDecls
 
     -- Check that the type definition graph is acyclic.
     void (first TypeCycle (sortTypeDefs typeDefs))
@@ -360,25 +368,20 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
             , _values = mempty
             }
 
-    constDefs' <- evalSemantic (
-        zipWithM constDef constDecls' [c | ConstDef _ c <- constDefs]) context
+    constDefs' <- evalSemantic (zipWithM constDef constDecls' constInits) context
 
-    (fnDefs', context') <- runSemantic (
-        zipWithM fnDef fnDecls' [b | FnDef _ b <- fnDefs]) context
+    (fnDefs', context') <- runSemantic (zipWithM fnDef fnDecls' fnBodies) context
 
-    let internPool =
-            Vector.fromList (fmap fst (sortOn snd (Map.toList (view strings context'))))
+    let internPool = Vector.fromList (fmap fst (sortOn snd (Map.toList (view strings context'))))
 
-    let (mainFnDefs', otherFnDefs') =
-            partition (\fd -> fnDefName fd == "main") fnDefs'
+    let (otherFnDefs', mainFnDefs') = partition ((/= "main") . fnDefName) fnDefs'
 
     case mainFnDefs' of
+        [] -> throwError MainFnDefMissing
         [mainFnDef'@(FnDef (FnDecl _ as t) _)]
-            | Vector.null as, t == Unit ->
-                pure (CheckedModule typeDefs' constDefs' internPool otherFnDefs' mainFnDef')
-            | otherwise ->
-                throwError (MainFnDefTypeMismatch mainFnDef')
-        _ -> throwError MainFnDefMissing
+            | Vector.null as, t == Unit -> pure (CheckedModule typeDefs' constDefs' internPool otherFnDefs' mainFnDef')
+            | otherwise -> throwError (MainFnDefTypeMismatch mainFnDef')
+        _ -> error ("Internal error: expected a single main function, got `" <> show mainFnDefs' <> ".")
   where
     groupBy key = Map.toList . fmap ($ []) . Map.fromListWith (.) . fmap adapt
       where
