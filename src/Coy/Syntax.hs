@@ -12,6 +12,9 @@ import Data.Vector (Vector)
 
 data Status = Unchecked | Checked
 
+data Located a = Located Int a
+    deriving Show
+
 data Module (u :: Status) where
     UncheckedModule
         :: [TypeDef 'Unchecked]
