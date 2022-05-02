@@ -19,7 +19,7 @@ import Data.Monoid (Endo (Endo, appEndo))
 import Data.Text (Text)
 import Data.Void (Void)
 import Lens.Micro (_1, _2, _3, over)
-import Text.Megaparsec (ParseErrorBundle, Parsec)
+import Text.Megaparsec (Parsec)
 import Text.Megaparsec.Error (errorBundlePretty)
 
 import qualified Data.Text as Text
@@ -30,16 +30,9 @@ import qualified Text.Megaparsec.Char.Lexer
 
 import Coy.Syntax
 
-type Parser = Parsec Void Text
-
-newtype ParseError = ParseError (ParseErrorBundle Text Void)
-
-instance Show ParseError where
-    show (ParseError e) = errorBundlePretty e
-
-parse :: String -> Text -> Either ParseError (Module 'Unchecked)
+parse :: String -> Text -> Either String (Module 'Unchecked)
 parse n s = do
-    (typeDefs, constDefs, fnDefs) <- bimap ParseError runAll (Parser.parse p n s)
+    (typeDefs, constDefs, fnDefs) <- bimap errorBundlePretty runAll (Parser.parse p n s)
     pure (UncheckedModule typeDefs constDefs fnDefs)
   where
     cons = Endo . (:)
@@ -65,6 +58,8 @@ parse n s = do
     go3 e = do
         fd <- fnDef
         go (over _3 (<> cons fd) e)
+
+type Parser = Parsec Void Text
 
 typeDef :: Parser (TypeDef 'Unchecked)
 typeDef = structDef <|> enumDef

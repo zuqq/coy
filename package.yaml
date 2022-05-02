@@ -43,7 +43,6 @@ executables:
     dependencies:
     - coy
     - filepath
-    - pretty-simple
 
 tests:
   coy-test:

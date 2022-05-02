@@ -24,7 +24,9 @@ import Data.Traversable (for)
 import Data.Vector (Vector)
 import Lens.Micro (Lens', _1, _2, _3, lens)
 import Lens.Micro.Mtl ((%=), (.=), use, view)
+import Text.Megaparsec
 
+import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text.Lazy as Text.Lazy
@@ -233,7 +235,10 @@ data SemanticError
     | PrintLnExprExcessHole FormatStringChunk
     | PrintLnExprExcessArg (Type 'Checked)
     | PrintLnExprTypeMismatch (Type 'Checked)
-    deriving Show
+    deriving (Eq, Ord, Show)
+
+instance ShowErrorComponent SemanticError where
+    showErrorComponent = show
 
 type Semantic = StateT Context (Except SemanticError)
 
@@ -300,8 +305,24 @@ intrinsicFns =
     , ("sqrt", (Vector.singleton F64, F64))
     ]
 
-semantic :: Module 'Unchecked -> Either SemanticError (Module 'Checked)
-semantic (UncheckedModule typeDefs constDefs fnDefs) = do
+semantic :: String -> Text -> Module 'Unchecked -> Either String (Module 'Checked)
+semantic filePath s = first (errorBundlePretty . wrap) . checkModule
+  where
+    initialPosState = PosState
+        { pstateInput = s
+        , pstateOffset = 0
+        , pstateSourcePos = initialPos filePath
+        , pstateTabWidth = defaultTabWidth
+        , pstateLinePrefix = mempty
+        }
+
+    wrap e = ParseErrorBundle
+        { bundleErrors = NonEmpty.singleton (FancyError 0 (Set.singleton (ErrorCustom e)))
+        , bundlePosState = initialPosState
+        }
+
+checkModule :: Module 'Unchecked -> Either SemanticError (Module 'Checked)
+checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
     let constDecls = [d | ConstDef d _ <- constDefs]
 
     let fnDecls = [d | FnDef d _ <- fnDefs]
