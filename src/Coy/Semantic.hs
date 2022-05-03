@@ -381,7 +381,7 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
         [mainFnDef'@(FnDef (FnDecl _ as t) _)]
             | Vector.null as, t == Unit -> pure (CheckedModule typeDefs' constDefs' internPool otherFnDefs' mainFnDef')
             | otherwise -> throwError (MainFnDefTypeMismatch mainFnDef')
-        _ -> error ("Internal error: expected a single main function, got `" <> show mainFnDefs' <> ".")
+        _ -> error ("Internal error: expected a single main function, got `" <> show mainFnDefs' <> "`.")
   where
     groupBy key = Map.toList . fmap ($ []) . Map.fromListWith (.) . fmap adapt
       where
