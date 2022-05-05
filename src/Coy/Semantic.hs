@@ -347,12 +347,14 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
 
     let constInits = [c | ConstDef _ c <- constDefs]
 
+    -- Resolve all constant declarations.
     constDecls' <- traverse resolveConstDecl constDecls
 
     let fnDecls = [d | FnDef d _ <- fnDefs]
 
     let fnBodies = [b | FnDef _ b <- fnDefs]
 
+    -- Resolve all function declaractions.
     fnDecls' <- traverse resolveFnDecl fnDecls
 
     -- Check that the type definition graph is acyclic.
@@ -367,12 +369,15 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
             , _values = mempty
             }
 
+    -- Check all constant definitions.
     constDefs' <- evalSemantic (zipWithM constDef constDecls' constInits) context
 
+    -- Check all function definitions.
     (fnDefs', context') <- runSemantic (zipWithM fnDef fnDecls' fnBodies) context
 
     let internPool = Vector.fromList (fmap fst (sortOn snd (Map.toList (view strings context'))))
 
+    -- Check that there is exactly one main function, of the right signature.
     let (otherFnDefs', mainFnDefs') = partition ((/= "main") . fnDefName) fnDefs'
 
     case mainFnDefs' of
