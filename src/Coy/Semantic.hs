@@ -16,7 +16,8 @@ import Control.Monad.Trans.State.Strict (StateT, evalStateT, runStateT)
 import Data.Bifunctor (bimap, first)
 import Data.Containers.ListUtils (nubOrd)
 import Data.Foldable (for_, toList, traverse_)
-import Data.List (partition, sort, sortOn)
+import Data.Function (on)
+import Data.List (groupBy, partition, sort, sortOn)
 import Data.List.Index (indexed)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
@@ -326,20 +327,18 @@ semantic filePath s = first (errorBundlePretty . wrap) . checkModule
 checkModule :: Module 'Unchecked -> Either SemanticError (Module 'Checked)
 checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
     -- Check for redefined types.
-    let typeDefsByName = groupBy typeDefName typeDefs
+    let typeDefsByName = sortAndGroupBy typeDefName typeDefs
 
-    for_ typeDefsByName \(_, ds) ->
-        case ds of
-            _ : d : _ -> throwError (RedefinedType d)
-            _ -> pure ()
+    for_ typeDefsByName \case
+        _ : d : _ -> throwError (RedefinedType d)
+        _ -> pure ()
 
     -- Check for redefined functions.
-    let fnDefsByName = groupBy fnDefName fnDefs
+    let fnDefsByName = sortAndGroupBy fnDefName fnDefs
 
-    for_ fnDefsByName \(_, ds) ->
-        case ds of
-            _ : d : _ -> throwError (RedefinedFn d)
-            _ -> pure ()
+    for_ fnDefsByName \case
+        _ : d : _ -> throwError (RedefinedFn d)
+        _ -> pure ()
 
     -- Resolve all types.
     typeDefs' <- traverse resolveTypeDef typeDefs
@@ -383,9 +382,7 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
             | otherwise -> throwError (MainFnDefTypeMismatch mainFnDef')
         _ -> error ("Internal error: expected a single main function, got `" <> show mainFnDefs' <> "`.")
   where
-    groupBy key = Map.toList . fmap ($ []) . Map.fromListWith (.) . fmap adapt
-      where
-        adapt value = (key value, (value :))
+    sortAndGroupBy key = groupBy ((==) `on` key) . sortOn key
 
     structNames = Set.fromList [n | StructDef n _ <- typeDefs]
 
