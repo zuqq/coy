@@ -432,10 +432,8 @@ fnDef d@(FnDecl n as returnType) b = do
     (b', resultType) <- namespaced (do
         traverse_ bindFnArg as
         block b)
-    if returnType == resultType then
-        pure (FnDef d b')
-    else
-        throwError (FnDefTypeMismatch n returnType resultType)
+    when (returnType /= resultType) (throwError (FnDefTypeMismatch n returnType resultType))
+    pure (FnDef d b')
   where
     bindFnArg (FnArg an at) = bindValue an at
 
@@ -453,13 +451,9 @@ statement = \case
         pure (LetStatement (VarPattern x) e')
     LetStatement (UncheckedStructPattern n xs) e -> do
         fieldTypes <- findStruct n
-        when
-            (Vector.length xs /= Vector.length fieldTypes)
-            (throwError (StructPatternArityMismatch n xs))
+        when (Vector.length xs /= Vector.length fieldTypes) (throwError (StructPatternArityMismatch n xs))
         (e', t) <- expr e
-        when
-            (Struct n /= t)
-            (throwError (StructPatternTypeMismatch n e t))
+        when (Struct n /= t) (throwError (StructPatternTypeMismatch n e t))
         let xts = Vector.zip xs fieldTypes
         traverse_ (uncurry bindValue) xts
         pure (LetStatement (CheckedStructPattern xts) e')
@@ -585,26 +579,20 @@ exprWithoutBlock = \case
         ets' <- traverse exprWithoutBlock es
         let ts = fmap snd ets'
         (argumentTypes, returnType) <- findFn n
-        if ts == argumentTypes then
-            pure (CheckedCallExpr n (fmap fst ets') returnType, returnType)
-        else
-            throwError (CallExprTypeMismatch n es ts)
+        when (ts /= argumentTypes) (throwError (CallExprTypeMismatch n es ts))
+        pure (CheckedCallExpr n (fmap fst ets') returnType, returnType)
     UncheckedStructExpr n es -> do
         ets' <- traverse exprWithoutBlock es
         let ts = fmap snd ets'
         fieldTypes <- findStruct n
-        if ts == fieldTypes then
-            pure (CheckedStructExpr n ets', Struct n)
-        else
-            throwError (StructExprTypeMismatch n es ts)
+        when (ts /= fieldTypes) (throwError (StructExprTypeMismatch n es ts))
+        pure (CheckedStructExpr n ets', Struct n)
     UncheckedEnumExpr n v es -> do
         ets' <- traverse exprWithoutBlock es
         let ts = fmap snd ets'
         (i, fieldTypes) <- findEnumVariant n v
-        if ts == fieldTypes then
-            pure (CheckedEnumExpr n i ets', Enum n)
-        else
-            throwError (EnumExprTypeMismatch n v es ts)
+        when (ts /= fieldTypes) (throwError (EnumExprTypeMismatch n v es ts))
+        pure (CheckedEnumExpr n i ets', Enum n)
     PrintLnExpr (UncheckedFormatString cs) es -> do
         ets' <- traverse exprWithoutBlock es
 
@@ -658,10 +646,8 @@ constDef
     -> Semantic (ConstDef 'Checked)
 constDef d@(ConstDecl _ constDeclType) c = do
     (c', t) <- constInit c
-    if constDeclType == t then
-        pure (ConstDef d c')
-    else
-        throwError (ConstDefTypeMismatch d c t)
+    when (constDeclType /= t) (throwError (ConstDefTypeMismatch d c t))
+    pure (ConstDef d c')
 
 constInit
     :: ConstInit 'Unchecked
@@ -677,15 +663,11 @@ constInit = \case
         fieldTypes <- findStruct n
         cts' <- traverse constInit cs
         let ts = fmap snd cts'
-        if ts == fieldTypes then
-            pure (StructInit n (fmap fst cts'), Struct n)
-        else
-            throwError (StructInitTypeMismatch n cs ts)
+        when (ts /= fieldTypes) (throwError (StructInitTypeMismatch n cs ts))
+        pure (StructInit n (fmap fst cts'), Struct n)
     UncheckedEnumInit n v cs -> do
         (i, fieldTypes) <- findEnumVariant n v
         cts' <- traverse constInit cs
         let ts = fmap snd cts'
-        if ts == fieldTypes then
-            pure (CheckedEnumInit n i (fmap fst cts'), Enum n)
-        else
-            throwError (EnumInitTypeMismatch n v cs ts)
+        when (ts /= fieldTypes) (throwError (EnumInitTypeMismatch n v cs ts))
+        pure (CheckedEnumInit n i (fmap fst cts'), Enum n)
