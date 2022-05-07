@@ -4,6 +4,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 module Coy.Semantic where
 
@@ -14,10 +15,9 @@ import Control.Monad.Error.Class (MonadError (throwError))
 import Control.Monad.Trans.Except (Except, runExcept)
 import Control.Monad.Trans.State.Strict (StateT, evalStateT, runStateT)
 import Data.Bifunctor (bimap, first)
-import Data.Containers.ListUtils (nubOrd)
 import Data.Foldable (for_, toList, traverse_)
 import Data.Function (on)
-import Data.List (groupBy, partition, sort, sortOn)
+import Data.List (groupBy, partition, sortOn)
 import Data.List.Index (indexed)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
@@ -136,35 +136,12 @@ data SemanticError
         -- ^ The scrutinee.
         (Type 'Checked)
         -- ^ Type of the scrutinee.
-    | MatchArmEnumMismatch
-    -- ^ The enum names in a match expression are not consistent with the type
-    -- of the scrutinee.
-        Text
-        -- ^ Name of the scrutinee's type.
-        [Text]
-        -- ^ Enum names in the match arms.
-    | MatchArmEnumVariantMismatch
-    -- ^ The enum variant names in a match expression are not consistent with
-    -- the type of the scrutinee.
-        Text
-        -- ^ Name of the scrutinee's type.
-        [Text]
-        -- ^ Enum variant names in the match arms.
-    | MatchArmArityMismatch
-    -- ^ The number of variables in a match arm is not equal to the arity of
-    -- the corresponding constructor.
-        Text
-        -- ^ Name of the enum.
-        Text
-        -- ^ Name of the enum variant.
-        (Vector Text)
-        -- ^ Variables for the components.
-    | MatchArmTypeMismatch
-    -- ^ The result types in a match expression are not all the same.
-        [MatchArm 'Unchecked]
-        -- ^ The match arms.
-        [Type 'Checked]
-        -- ^ Result types of the match arms.
+    | MatchArmEnumMismatch Text Text
+    | MatchArmEnumVariantNotFound Text Text
+    | MatchArmArityMismatch Int Int
+    | MatchArmTypeMismatch (Type 'Checked) (Type 'Checked)
+    | MatchArmEnumVariantsDuplicated Text (NonEmpty Text)
+    | MatchArmEnumVariantsMissing Text (NonEmpty Text)
     | StructPatternArityMismatch
     -- ^ The number of variables in a struct pattern is not equal to the arity
     -- of the struct's constructor.
@@ -507,48 +484,58 @@ exprWithBlock = \case
         (b1', t1) <- block b1
         when (t0 /= t1) (throwError (IfBlocksTypeMismatch b0 t0 b1 t1))
         pure (IfExpr e' b0' b1', t0)
-    UncheckedMatchExpr e0 as -> do
+    UncheckedMatchExpr e0 uncheckedMatchArms -> do
         (e0', t0) <- exprWithoutBlock e0
         case t0 of
-            Enum n -> do
-                vs <- fmap Map.keysSet (findEnum n)
+            Enum n0 -> do
+                -- Look up the enum variants using the unsafe `Map.!` operator;
+                -- if this fails, then we haven't set up the context correctly.
+                vs0 <- fmap (Map.! n0) (use enums)
 
-                -- Check that the enum names are all equal to @n@.
-                let actualEnums = [n' | UncheckedMatchArm n' _ _ _ <- as]
-                when
-                    (Set.fromList actualEnums /= Set.singleton n)
-                    (throwError (MatchArmEnumMismatch n actualEnums))
+                checkedMatchArms <- for uncheckedMatchArms \(UncheckedMatchArm n v xs e) -> do
+                    when (n /= n0) (throwError (MatchArmEnumMismatch n0 n))
+                    case Map.lookup v vs0 of
+                        Nothing -> throwError (MatchArmEnumVariantNotFound n0 v)
+                        Just (i, fieldTypes) -> do
+                            let actual = Vector.length xs
+                            let expected = Vector.length fieldTypes
+                            when (actual /= expected) (throwError (MatchArmArityMismatch actual expected))
+                            namespaced do
+                                let xts = Vector.zip xs fieldTypes
+                                traverse_ (uncurry bindValue) xts
+                                (e', resultType) <- expr e
+                                pure (i, CheckedMatchArm xts e', resultType)
 
-                -- Check that the enum variant names exactly cover the variants.
-                let actualEnumVariants = [v | UncheckedMatchArm _ v _ _ <- as]
-                when
-                    (sort actualEnumVariants /= Set.toAscList vs)
-                    (throwError
-                        (MatchArmEnumVariantMismatch n actualEnumVariants))
+                let coverageByIndex = histogram [i | (i, _, _) <- checkedMatchArms]
 
-                iats' <- for as (\(UncheckedMatchArm _ v xs e) -> do
-                    (i, fieldTypes) <- findEnumVariant n v
-                    if Vector.length xs == Vector.length fieldTypes then
-                        namespaced (do
-                            let xts = Vector.zip xs fieldTypes
-                            traverse_ (uncurry bindValue) xts
-                            (e', resultType) <- expr e
-                            pure (i, CheckedMatchArm xts e', resultType))
-                    else
-                        throwError (MatchArmArityMismatch n v xs))
+                let coverageByName = [(v0, occurrences i coverageByIndex) | (v0, (i, _)) <- Map.toList vs0]
 
-                -- Check that the types of the match arms are all the same.
-                let resultTypes = fmap (view _3) iats'
-                case nubOrd resultTypes of
-                    [resultType] ->
-                        -- Sort the checked match arms by variant index.
-                        let as' = fmap (view _2) (sortOn (view _1) iats') in
+                case NonEmpty.nonEmpty [v0 | (v0, n) <- coverageByName, n > 1] of
+                    Nothing -> pure ()
+                    Just actual -> throwError (MatchArmEnumVariantsDuplicated n0 actual)
 
-                        pure (CheckedMatchExpr e0' n as', resultType)
-                    _ ->
-                        throwError
-                            (MatchArmTypeMismatch as resultTypes)
+                case NonEmpty.nonEmpty [v0 | (v0, 0) <- coverageByName] of
+                    Nothing -> pure ()
+                    Just actual -> throwError (MatchArmEnumVariantsMissing n0 actual)
+
+                case checkedMatchArms of
+                    [] -> pure (CheckedMatchExpr e0' n0 [], Unit)
+                    (_, _, expected) : _
+                        | actual : _ <- otherReturnTypes -> throwError (MatchArmTypeMismatch actual expected)
+                        | otherwise -> pure (CheckedMatchExpr e0' n0 sortedCheckedMatchArms, expected)
+                      where
+                        otherReturnTypes = fmap (view _3) (filter ((/= expected) . view _3) checkedMatchArms)
+
+                        sortedCheckedMatchArms = fmap (view _2) (sortOn (view _1) checkedMatchArms)
             _ -> throwError (MatchScrutineeTypeMismatch e0 t0)
+  where
+    -- This type signature ties down the type of @1@.
+    histogram :: Ord a => [a] -> Map a Int
+    histogram = Map.fromListWith (+) . fmap (, 1)
+
+    -- This type signature ties down the type of @0@.
+    occurrences :: Ord a => a -> Map a Int -> Int
+    occurrences = Map.findWithDefault 0
 
 exprWithoutBlock
     :: ExprWithoutBlock 'Unchecked
