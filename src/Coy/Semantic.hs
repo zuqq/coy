@@ -49,22 +49,22 @@ data Context = Context
     deriving Show
 
 structs :: Lens' Context (Map Text (Vector (Type 'Checked)))
-structs = lens _structs (\c ss -> c {_structs = ss})
+structs = lens _structs \c ss -> c {_structs = ss}
 
 enums :: Lens' Context (Map Text (Map Text (Int, Vector (Type 'Checked))))
-enums = lens _enums (\c es -> c {_enums = es})
+enums = lens _enums \c es -> c {_enums = es}
 
 consts :: Lens' Context (Map Text (Type 'Checked))
-consts = lens _consts (\c cs -> c {_consts = cs})
+consts = lens _consts \c cs -> c {_consts = cs}
 
 strings :: Lens' Context (Map Text Int)
-strings = lens _strings (\c ss -> c {_strings = ss})
+strings = lens _strings \c ss -> c {_strings = ss}
 
 fns :: Lens' Context (Map Text (Vector (Type 'Checked), Type 'Checked))
-fns = lens _fns (\c fs -> c {_fns = fs})
+fns = lens _fns \c fs -> c {_fns = fs}
 
 values :: Lens' Context (Map Text (Type 'Checked))
-values = lens _values (\c vs -> c {_values = vs})
+values = lens _values \c vs -> c {_values = vs}
 
 data SemanticError
     = RedefinedType (TypeDef 'Unchecked)
@@ -429,9 +429,9 @@ sortTypeDefs typeDefs = bimap (fmap fromLabel) (fmap fromLabel) (topSort graph)
 
 fnDef :: FnDecl 'Checked -> Block 'Unchecked -> Semantic (FnDef 'Checked)
 fnDef d@(FnDecl n as returnType) b = do
-    (b', resultType) <- namespaced (do
+    (b', resultType) <- namespaced do
         traverse_ bindFnArg as
-        block b)
+        block b
     when (returnType /= resultType) (throwError (FnDefTypeMismatch n returnType resultType))
     pure (FnDef d b')
   where
