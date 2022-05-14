@@ -2,18 +2,12 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Guiding principles:
---
--- - Every token owns the whitespace that comes after it.
--- - Every statement owns the semicolon that comes after it.
 module Coy.Parse where
 
 import Control.Applicative ((<|>), many)
-import Control.Monad.Combinators.Expr (
-    Operator (InfixL, InfixN, Postfix, Prefix), makeExprParser)
+import Control.Monad.Combinators.Expr (Operator (InfixL, InfixN, Postfix, Prefix), makeExprParser)
 import Data.Bifunctor (bimap)
-import Data.Char (
-    isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isDigit, isPrint)
+import Data.Char (isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isDigit, isPrint)
 import Data.Functor (($>), void)
 import Data.Monoid (Endo (Endo, appEndo))
 import Data.Text (Text)
@@ -48,18 +42,24 @@ parse n s = do
 
     -- Correspond to different incarnations of @some@.
     go1 e = do
-        td <- typeDef
+        td <- located typeDef
         go (over _1 (<> cons td) e)
 
     go2 e = do
-        cd <- constDef
+        cd <- located constDef
         go (over _2 (<> cons cd) e)
 
     go3 e = do
-        fd <- fnDef
+        fd <- located fnDef
         go (over _3 (<> cons fd) e)
 
 type Parser = Parsec Void Text
+
+located :: Parser a -> Parser (Located a)
+located p = do
+    location <- fmap Location Parser.getOffset
+    result <- p
+    pure (Located location result)
 
 typeDef :: Parser (TypeDef 'Unchecked)
 typeDef = structDef <|> enumDef
@@ -93,10 +93,10 @@ fnDecl :: Parser (FnDecl 'Unchecked)
 fnDecl = do
     "fn" *> space1
     n <- valueName
-    as <- parenthesized (commaSeparated fnArg)
+    as <- located (parenthesized (commaSeparated fnArg))
     "->" *> space
-    t <- typeName
-    pure (FnDecl n (Vector.fromList as) t)
+    t <- located typeName
+    pure (UncheckedFnDecl n (fmap Vector.fromList as) t)
 
 fnArg :: Parser (FnArg 'Unchecked)
 fnArg = do
@@ -106,10 +106,10 @@ fnArg = do
     pure (FnArg an at)
 
 block :: Parser (Block 'Unchecked)
-block = withinBraces (do
-    ss <- many (Parser.try statement)
-    e <- expr
-    pure (Block (Vector.fromList ss) e))
+block = withinBraces $ do
+    ss <- many (located (Parser.try statement))
+    e <- located expr
+    pure (UncheckedBlock (Vector.fromList ss) e)
 
 statement :: Parser (Statement 'Unchecked)
 statement = letStatement <|> exprStatement
@@ -120,9 +120,9 @@ statement = letStatement <|> exprStatement
         equal
         e <- expr
         semicolon
-        pure (LetStatement p e)
+        pure (UncheckedLetStatement p e)
 
-    exprStatement = fmap ExprStatement expr <* semicolon
+    exprStatement = fmap UncheckedExprStatement expr <* semicolon
 
 pattern :: Parser (Pattern 'Unchecked)
 pattern = varPattern <|> structPattern
@@ -130,12 +130,12 @@ pattern = varPattern <|> structPattern
     varPattern = fmap VarPattern valueName
 
     structPattern = do
-        n <- structName
-        vs <- parenthesized (commaSeparated valueName)
-        pure (UncheckedStructPattern n (Vector.fromList vs))
+        n <- located structName
+        vs <- located (parenthesized (commaSeparated valueName))
+        pure (UncheckedStructPattern n (fmap Vector.fromList vs))
 
 expr :: Parser (Expr 'Unchecked)
-expr = fmap ExprWithBlock exprWithBlock <|> fmap ExprWithoutBlock exprWithoutBlock
+expr = fmap UncheckedExprWithBlock exprWithBlock <|> fmap UncheckedExprWithoutBlock (located exprWithoutBlock)
 
 exprWithBlock :: Parser (ExprWithBlock 'Unchecked)
 exprWithBlock = blockExpr <|> ifExpr <|> matchExpr
@@ -144,33 +144,33 @@ exprWithBlock = blockExpr <|> ifExpr <|> matchExpr
 
     ifExpr = do
         "if" *> space1
-        e <- exprWithoutBlock
+        e <- located exprWithoutBlock
         b0 <- block
         "else" *> space1
         b1 <- block
-        pure (IfExpr e b0 b1)
+        pure (UncheckedIfExpr e b0 b1)
 
     matchExpr = do
         "match" *> space1
-        e <- exprWithoutBlock
-        as <- withinBraces (commaSeparated matchArm)
+        e <- located exprWithoutBlock
+        as <- located (withinBraces (commaSeparated matchArm))
         pure (UncheckedMatchExpr e as)
 
 matchArm :: Parser (MatchArm 'Unchecked)
 matchArm = do
-    n <- enumName
+    n <- located enumName
     void "::"
-    v <- enumVariantName
-    xs <- parenthesized (commaSeparated valueName)
+    v <- located enumVariantName
+    xs <- located (parenthesized (commaSeparated valueName))
     "=>" *> space
-    e <- expr
-    pure (UncheckedMatchArm n v (Vector.fromList xs) e)
+    e <- located expr
+    pure (UncheckedMatchArm n v (fmap Vector.fromList xs) e)
 
 exprWithoutBlock :: Parser (ExprWithoutBlock 'Unchecked)
 exprWithoutBlock = makeExprParser term ops
   where
     term =
-            Parser.try litExpr
+        Parser.try litExpr
         <|> parenthesized exprWithoutBlock
         <|> Parser.try callExpr
         <|> Parser.try printLnExpr
@@ -182,38 +182,38 @@ exprWithoutBlock = makeExprParser term ops
     litExpr = fmap LitExpr lit
 
     callExpr = do
-        n <- valueName
-        es <- parenthesized (commaSeparated exprWithoutBlock)
-        pure (UncheckedCallExpr n (Vector.fromList es))
+        n <- located valueName
+        es <- located (parenthesized (commaSeparated exprWithoutBlock))
+        pure (UncheckedCallExpr n (fmap Vector.fromList es))
 
-    varExpr = fmap UncheckedVarExpr valueName
+    varExpr = fmap UncheckedVarExpr (located valueName)
 
-    constExpr = fmap UncheckedConstExpr constName
+    constExpr = fmap UncheckedConstExpr (located constName)
 
     enumExpr = do
-        n <- enumName
+        n <- located enumName
         void "::"
-        v <- enumVariantName
-        es <- parenthesized (commaSeparated exprWithoutBlock)
-        pure (UncheckedEnumExpr n v (Vector.fromList es))
+        v <- located enumVariantName
+        es <- located (parenthesized (commaSeparated exprWithoutBlock))
+        pure (UncheckedEnumExpr n v (fmap Vector.fromList es))
 
     structExpr = do
-        n <- structName
-        es <- parenthesized (commaSeparated exprWithoutBlock)
-        pure (UncheckedStructExpr n (Vector.fromList es))
+        n <- located structName
+        es <- located (parenthesized (commaSeparated exprWithoutBlock))
+        pure (UncheckedStructExpr n (fmap Vector.fromList es))
 
     printLnExpr = do
         void "println"
         Parser.char '!' *> space
-        (f, es) <- parenthesized (do
+        (f, es) <- parenthesized $ do
             f <- formatString
-            es <- many (comma *> exprWithoutBlock)
-            pure (f, es))
-        pure (PrintLnExpr f es)
+            es <- many (comma *> located exprWithoutBlock)
+            pure (f, es)
+        pure (UncheckedPrintLnExpr f es)
       where
         formatString = do
             void (Parser.char '"')
-            cs <- many formatStringChunk
+            cs <- many (located formatStringChunk)
             void (Parser.char '"')
             space
             pure (UncheckedFormatString cs)
@@ -222,42 +222,58 @@ exprWithoutBlock = makeExprParser term ops
 
         hole = "{}" $> Hole
 
-        nonHole = fmap NonHole (
+        nonHole = NonHole <$>
             Parser.takeWhile1P
                 (Just "non-hole character")
-                (\c -> isAscii c && isPrint c && c /= '"' && c /= '{'))
+                (\c -> isAscii c && isPrint c && c /= '"' && c /= '{')
 
     ops =
         [
-            [Prefix (symbolic '-' $> UnaryOpExpr Neg)],
-            [Prefix (symbolic '!' $> UnaryOpExpr Not)],
-            [Postfix (fmap (UnaryOpExpr . As) (symbol "as" *> typeName))],
             [
-                InfixL (symbolic '*' $> BinaryOpExpr Mul),
-                InfixL (symbolic '/' $> BinaryOpExpr Div),
-                InfixL (symbolic '%' $> BinaryOpExpr Rem)
+                Prefix (fmap (UncheckedUnaryOpExpr . ($> Neg)) (located (symbolic '-')))
             ],
             [
-                InfixL (symbolic '+' $> BinaryOpExpr Add),
-                InfixL (symbolic '-' $> BinaryOpExpr Sub)
+                Prefix (fmap (UncheckedUnaryOpExpr . ($> Not)) (located (symbolic '!')))
             ],
             [
-                InfixL (symbol "<<" $> BinaryOpExpr Shl),
-                InfixL (symbol ">>" $> BinaryOpExpr Shr)
+                Postfix (fmap (UncheckedUnaryOpExpr . fmap As) (located (symbol "as" *> typeName)))
             ],
-            [InfixL (Parser.try bitAnd $> BinaryOpExpr BitAnd)],
-            [InfixL (symbolic '^' $> BinaryOpExpr BitXor)],
-            [InfixL (Parser.try bitOr $> BinaryOpExpr BitOr)],
             [
-                InfixN (symbol "==" $> BinaryOpExpr (Cmp Eq)),
-                InfixN (symbol "!=" $> BinaryOpExpr (Cmp Ne)),
-                InfixN (symbol "<=" $> BinaryOpExpr (Cmp Le)),
-                InfixN (symbol ">=" $> BinaryOpExpr (Cmp Ge)),
-                InfixN (symbolic '<' $> BinaryOpExpr (Cmp Lt)),
-                InfixN (symbolic '>' $> BinaryOpExpr (Cmp Gt))
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> Mul)) (located (symbolic '*'))),
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> Div)) (located (symbolic '/'))),
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> Rem)) (located (symbolic '%')))
             ],
-            [InfixL (symbol "&&" $> BinaryOpExpr And)],
-            [InfixL (symbol "||" $> BinaryOpExpr Or)]
+            [
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> Add)) (located (symbolic '+'))),
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> Sub)) (located (symbolic '-')))
+            ],
+            [
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> Shl)) (located (symbol "<<"))),
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> Shr)) (located (symbol ">>")))
+            ],
+            [
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> BitAnd)) (located (Parser.try bitAnd)))
+            ],
+            [
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> BitXor)) (located (symbolic '^')))
+            ],
+            [
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> BitOr)) (located (Parser.try bitOr)))
+            ],
+            [
+                InfixN (fmap (UncheckedBinaryOpExpr . ($> Cmp Eq)) (located (symbol "=="))),
+                InfixN (fmap (UncheckedBinaryOpExpr . ($> Cmp Ne)) (located (symbol "!="))),
+                InfixN (fmap (UncheckedBinaryOpExpr . ($> Cmp Le)) (located (symbol "<="))),
+                InfixN (fmap (UncheckedBinaryOpExpr . ($> Cmp Ge)) (located (symbol ">="))),
+                InfixN (fmap (UncheckedBinaryOpExpr . ($> Cmp Lt)) (located (symbolic '<'))),
+                InfixN (fmap (UncheckedBinaryOpExpr . ($> Cmp Gt)) (located (symbolic '>')))
+            ],
+            [
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> And)) (located (symbol "&&")))
+            ],
+            [
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> Or)) (located (symbol "||")))
+            ]
         ]
       where
         bitAnd = Parser.char '&' <* Parser.notFollowedBy (Parser.char '&') <* space
@@ -296,9 +312,9 @@ constDef = do
     colon
     t <- typeName
     equal
-    c <- constInit
+    c <- located constInit
     semicolon
-    pure (ConstDef (ConstDecl x t) c)
+    pure (UncheckedConstDef (ConstDecl x t) c)
   where
     constInit = litInit <|> negLitInit <|> Parser.try structInit <|> enumInit
 
@@ -306,20 +322,20 @@ constDef = do
 
     negLitInit = do
        Parser.char '-' *> space
-       l <- lit
+       l <- located lit
        pure (UncheckedNegLitInit l)
 
     structInit = do
-        n <- structName
-        cs <- parenthesized (commaSeparated constInit)
-        pure (StructInit n (Vector.fromList cs))
+        n <- located structName
+        cs <- located (parenthesized (commaSeparated constInit))
+        pure (UncheckedStructInit n (fmap Vector.fromList cs))
 
     enumInit = do
-        n <- enumName
+        n <- located enumName
         void "::"
-        v <- enumVariantName
-        cs <- parenthesized (commaSeparated constInit)
-        pure (UncheckedEnumInit n v (Vector.fromList cs))
+        v <- located enumVariantName
+        cs <- located (parenthesized (commaSeparated constInit))
+        pure (UncheckedEnumInit n v (fmap Vector.fromList cs))
 
 isEndOfLine :: Char -> Bool
 isEndOfLine c = c == '\n' || c == '\r'
@@ -432,4 +448,4 @@ typeName = unit <|> bool <|> i64 <|> f64 <|> structOrEnum
 
     f64 = symbol "f64" $> F64
 
-    structOrEnum = fmap StructOrEnum upperIdentifier
+    structOrEnum = fmap StructOrEnum (located upperIdentifier)

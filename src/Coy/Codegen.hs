@@ -357,7 +357,8 @@ builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBl
 
             defineType vn vt'
 
-    constDef (ConstDef (ConstDecl x t) c) = do
+    constDef :: ConstDef 'Checked -> ModuleBuilder ()
+    constDef (CheckedConstDef (ConstDecl x t) c) = do
         let x' = reifyName x
 
         let t' =
@@ -374,7 +375,7 @@ builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBl
         bindConst x reference
 
 fnDef :: FnDef 'Checked -> ModuleBuilder LLVM.AST.Operand
-fnDef (FnDef (FnDecl n as t) b) =
+fnDef (FnDef (CheckedFnDecl n as t) b) =
     let n' = reifyName (fnName n) in
 
     let defineFn = LLVM.IRBuilder.privateFunction n' in
@@ -514,28 +515,28 @@ destructureEnumVariant n i xts p0 = do
             bindValue x b
 
 block :: Block 'Checked -> IRBuilder LLVM.AST.Operand
-block (Block ss e) = do
+block (CheckedBlock ss e) = do
     traverse_ statement ss
     expr e
 
 statement :: Statement 'Checked -> IRBuilder ()
 statement = \case
-    LetStatement p e -> do
+    CheckedLetStatement p e -> do
         a <- expr e
         case p of
             VarPattern x -> bindValue x a
             CheckedStructPattern xts -> destructureStruct xts a
-    ExprStatement e -> void (expr e)
+    CheckedExprStatement e -> void (expr e)
 
 expr :: Expr 'Checked -> IRBuilder LLVM.AST.Operand
 expr = \case
-    ExprWithBlock e -> exprWithBlock e
-    ExprWithoutBlock e -> exprWithoutBlock e
+    CheckedExprWithBlock e -> exprWithBlock e
+    CheckedExprWithoutBlock e -> exprWithoutBlock e
 
 exprWithBlock :: ExprWithBlock 'Checked -> IRBuilder LLVM.AST.Operand
 exprWithBlock = \case
     BlockExpr b -> namespaced (block b)
-    IfExpr e thenBlock elseBlock -> mdo
+    CheckedIfExpr e thenBlock elseBlock -> mdo
         a <- exprWithoutBlock e
         LLVM.IRBuilder.condBr a thenInLabel elseInLabel
 
@@ -599,7 +600,7 @@ exprWithoutBlock = \case
             Struct _ -> pure p
             Enum _ -> LLVM.IRBuilder.bitcast p (LLVM.AST.Type.ptr (reifyType t))
             _ -> LLVM.IRBuilder.load p 0
-    UnaryOpExpr o e -> do
+    CheckedUnaryOpExpr o e -> do
         a <- exprWithoutBlock e
         let instruction =
                 case o of
@@ -609,7 +610,7 @@ exprWithoutBlock = \case
                     AsF64 -> flip LLVM.IRBuilder.sitofp LLVM.AST.Type.double
                     AsI64 -> flip LLVM.IRBuilder.fptosi LLVM.AST.Type.i64
         instruction a
-    BinaryOpExpr o e0 e1 -> do
+    CheckedBinaryOpExpr o e0 e1 -> do
         a0 <- exprWithoutBlock e0
         a1 <- exprWithoutBlock e1
         let instruction =
@@ -662,7 +663,7 @@ exprWithoutBlock = \case
             LLVM.IRBuilder.call fn as'
     CheckedStructExpr n ets -> constructStruct n ets
     CheckedEnumExpr n i ets -> constructEnumVariant n i ets
-    PrintLnExpr (CheckedFormatString i) es -> do
+    CheckedPrintLnExpr (CheckedFormatString i) es -> do
         a0 <- findString i
         as <- traverse exprWithoutBlock es
         void (LLVM.IRBuilder.call printf [(a, mempty) | a <- a0 : as])
@@ -673,7 +674,7 @@ reifyConstInit = \case
     LitInit l -> lit l
     NegI64LitInit x -> lit (I64Lit (-x))
     NegF64LitInit x -> lit (F64Lit (-x))
-    StructInit n cs ->
+    CheckedStructInit n cs ->
         let n' = reifyName (structName n) in
 
         let cs' = fmap reifyConstInit (toList cs) in
@@ -688,14 +689,14 @@ reifyConstInit = \case
 
 -- Entry point for blocks in tail position.
 tailBlock :: Block 'Checked -> IRBuilder ()
-tailBlock (Block ss e) = do
+tailBlock (CheckedBlock ss e) = do
     traverse_ statement ss
     tailExpr e
 
 tailExpr :: Expr 'Checked -> IRBuilder ()
 tailExpr = \case
-    ExprWithBlock e -> tailExprWithBlock e
-    ExprWithoutBlock e -> tailExprWithoutBlock e
+    CheckedExprWithBlock e -> tailExprWithBlock e
+    CheckedExprWithoutBlock e -> tailExprWithoutBlock e
 
 -- Instead of joining the branches by introducing a phi node and then returning,
 -- we return separately in each branch. This has the effect that function calls
@@ -704,7 +705,7 @@ tailExpr = \case
 tailExprWithBlock :: ExprWithBlock 'Checked -> IRBuilder ()
 tailExprWithBlock = \case
     BlockExpr b -> namespaced (tailBlock b)
-    IfExpr e thenBlock elseBlock -> mdo
+    CheckedIfExpr e thenBlock elseBlock -> mdo
         a <- exprWithoutBlock e
         LLVM.IRBuilder.condBr a thenLabel elseLabel
 

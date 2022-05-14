@@ -1,5 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
@@ -17,13 +18,15 @@ import Control.Monad.Trans.State.Strict (StateT, evalStateT, runStateT)
 import Data.Bifunctor (bimap, first)
 import Data.Foldable (for_, toList, traverse_)
 import Data.Function (on)
-import Data.List (groupBy, partition, sortOn)
+import Data.List (groupBy, intercalate, partition, sortOn)
 import Data.List.Index (indexed)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Text (Text)
+import Data.Text.Lazy.Builder (Builder)
 import Data.Traversable (for)
 import Data.Vector (Vector)
+import Data.Void (Void)
 import Lens.Micro (Lens', _1, _2, _3, lens)
 import Lens.Micro.Mtl ((%=), (.=), use, view)
 import Text.Megaparsec
@@ -67,158 +70,39 @@ values :: Lens' Context (Map Text (Type 'Checked))
 values = lens _values \c vs -> c {_values = vs}
 
 data SemanticError
-    = RedefinedType (TypeDef 'Unchecked)
-    | RedefinedFn (FnDef 'Unchecked)
-    | StructOrEnumNotFound Text
+    = RedefinedType (Located (TypeDef 'Unchecked))
+    | RedefinedFn (Located (FnDef 'Unchecked))
+    | StructOrEnumNotFound (Located Text)
     | TypeCycle (NonEmpty (TypeDef 'Unchecked))
-    | StructNotFound Text
-    | EnumNotFound Text
-    | EnumVariantNotFound Text Text
-    | ConstNotFound Text
-    | FnNotFound Text
-    | ValueNotFound Text
-    | ConstDefTypeMismatch
-    -- ^ The declared and observed type of a constant differ.
-        (ConstDecl 'Checked)
-        -- ^ Left-hand side of the constant definition.
-        (ConstInit 'Unchecked)
-        -- ^ Right-hand side of the constant definition.
-        (Type 'Checked)
-        -- ^ Observed type.
-    | NegLitInitTypeMismatch Lit (Type 'Checked)
-    | StructInitTypeMismatch
-    -- ^ The given argument list doesn't conform to the constructor's signature.
-        Text
-        -- ^ Name of the struct.
-        (Vector (ConstInit 'Unchecked))
-        -- ^ Arguments.
-        (Vector (Type 'Checked))
-        -- ^ Types of the arguments.
-    | EnumInitTypeMismatch
-    -- ^ The given argument list doesn't conform to the constructor's signature.
-        Text
-        -- ^ Name of the enum.
-        Text
-        -- ^ Name of the enum variant.
-        (Vector (ConstInit 'Unchecked))
-        -- ^ Arguments.
-        (Vector (Type 'Checked))
-        -- ^ Types of the arguments.
+    | StructNotFound (Located Text)
+    | EnumNotFound (Located Text)
+    | EnumVariantNotFound Location Text Text
+    | ConstNotFound (Located Text)
+    | FnNotFound (Located Text)
+    | ValueNotFound (Located Text)
+    | ConstDefTypeMismatch Location (Type 'Checked) (Type 'Checked)
+    | NegLitInitTypeMismatch (Located (Type 'Checked))
+    | ArgumentTypesMismatch Location (Vector (Type 'Checked)) (Vector (Type 'Checked))
     | MainFnDefMissing
-    | MainFnDefTypeMismatch (FnDef 'Checked)
-    | FnDefTypeMismatch
-    -- ^ The declared and observed return type of a function differ.
-        Text
-        -- ^ Name of the function.
-        (Type 'Checked)
-        -- ^ Declared return type.
-        (Type 'Checked)
-        -- ^ Observed return type.
-    | IfScrutineeTypeMismatch
-    -- ^ The scrutinee in an if expression is not of type @Bool@.
-        (ExprWithoutBlock 'Unchecked)
-        -- ^ The scrutinee.
-        (Type 'Checked)
-        -- ^ Actual type of the scrutinee.
-    | IfBlocksTypeMismatch
-    -- ^ The result types in an if expression are not the same.
-        (Block 'Unchecked)
-        -- ^ The first block.
-        (Type 'Checked)
-        -- ^ Result type of the first block.
-        (Block 'Unchecked)
-        -- ^ The second block.
-        (Type 'Checked)
-        -- ^ Result type of the second block.
-    | MatchScrutineeTypeMismatch
-    -- ^ The scrutinee in a match expression is not of enum type.
-        (ExprWithoutBlock 'Unchecked)
-        -- ^ The scrutinee.
-        (Type 'Checked)
-        -- ^ Type of the scrutinee.
-    | MatchArmEnumMismatch Text Text
-    | MatchArmEnumVariantNotFound Text Text
-    | MatchArmArityMismatch Int Int
-    | MatchArmTypeMismatch (Type 'Checked) (Type 'Checked)
-    | MatchArmEnumVariantsDuplicated Text (NonEmpty Text)
-    | MatchArmEnumVariantsMissing Text (NonEmpty Text)
-    | StructPatternArityMismatch
-    -- ^ The number of variables in a struct pattern is not equal to the arity
-    -- of the struct's constructor.
-        Text
-        -- ^ Name of the struct.
-        (Vector Text)
-        -- ^ Variables for the components.
-    | StructPatternTypeMismatch
-    -- ^ The right-hand side of a destructuring is of the wrong type.
-        Text
-        -- ^ Name of the struct.
-        (Expr 'Unchecked)
-        -- ^ Right-hand side of the destructuring.
-        (Type 'Checked)
-        -- ^ Type of the right-hand side.
-    | UnaryOpTypeMismatch
-    -- ^ The given unary operator has no overloading consistent with the
-    -- arguments' types.
-        (UnaryOp 'Unchecked)
-        -- ^ The unary operator.
-        (ExprWithoutBlock 'Unchecked)
-        -- ^ Argument.
-        (Type 'Checked)
-        -- ^ Type of the argument.
-    | BinaryOpTypeMismatch
-    -- ^ The given binary operator has no overloading consistent with the
-    -- arguments' types.
-        (BinaryOp 'Unchecked)
-        -- ^ The binary operator.
-        (ExprWithoutBlock 'Unchecked)
-        -- ^ First argument.
-        (Type 'Checked)
-        -- ^ Type of the first argument.
-        (ExprWithoutBlock 'Unchecked)
-        -- ^ Second argument.
-        (Type 'Checked)
-        -- ^ Type of the second argument.
-    | CallExprTypeMismatch
-    -- ^ The given argument list doesn't conform to the function's signature.
-        Text
-        -- ^ Name of the function.
-        (Vector (ExprWithoutBlock 'Unchecked))
-        -- ^ Arguments.
-        (Vector (Type 'Checked))
-        -- ^ Types of the arguments.
-    | StructExprTypeMismatch
-    -- ^ The given argument list doesn't conform to the constructor's signature.
-        Text
-        -- ^ Name of the struct.
-        (Vector (ExprWithoutBlock 'Unchecked))
-        -- ^ Arguments.
-        (Vector (Type 'Checked))
-        -- ^ Types of the arguments.
-    | EnumExprTypeMismatch
-    -- ^ The given argument list doesn't conform to the constructor's signature.
-        Text
-        -- ^ Name of the enum.
-        Text
-        -- ^ Name of the enum variant.
-        (Vector (ExprWithoutBlock 'Unchecked))
-        -- ^ Arguments.
-        (Vector (Type 'Checked))
-        -- ^ Types of the arguments.
-    | PrintLnExprArityMismatch
-    -- ^ The number of holes in the format string is not equal to the length of
-    -- the argument list.
-        (FormatString 'Unchecked)
-        -- ^ The format string.
-        [ExprWithoutBlock 'Unchecked]
-        -- ^ The argument list.
-    | PrintLnExprExcessHole FormatStringChunk
-    | PrintLnExprExcessArg (Type 'Checked)
-    | PrintLnExprTypeMismatch (Type 'Checked)
-    deriving (Eq, Ord, Show)
-
-instance ShowErrorComponent SemanticError where
-    showErrorComponent = show
+    | MainFnDefArityMismatch Location Int
+    | MainFnDefReturnTypeMismatch Location (Type 'Checked)
+    | FnDefTypeMismatch Location (Type 'Checked) (Type 'Checked)
+    | IfScrutineeTypeMismatch Location (Type 'Checked)
+    | IfBlocksTypeMismatch Location (Type 'Checked) (Type 'Checked)
+    | MatchScrutineeTypeMismatch Location (Type 'Checked)
+    | MatchArmEnumMismatch Location Text Text
+    | MatchArmEnumVariantNotFound Location Text Text
+    | MatchArmTypeMismatch Location (Type 'Checked) (Type 'Checked)
+    | MatchArmEnumVariantsDuplicated Location Text (NonEmpty Text)
+    | MatchArmEnumVariantsMissing Location Text (NonEmpty Text)
+    | StructPatternArityMismatch Location Int Int
+    | StructPatternTypeMismatch Location (Type 'Checked) (Type 'Checked)
+    | UnaryOpTypeMismatch Location (UnaryOp 'Unchecked) (Type 'Checked)
+    | BinaryOpTypeMismatch Location (BinaryOp 'Unchecked) (Type 'Checked) (Type 'Checked)
+    | PrintLnExprExcessHole Location
+    | PrintLnExprExcessArg Location
+    | PrintLnExprTypeMismatch (Located (Type 'Checked))
+    deriving Show
 
 type Semantic = StateT Context (Except SemanticError)
 
@@ -231,25 +115,25 @@ runSemantic c = runExcept . runStateT c
 orFail :: Maybe a -> SemanticError -> Semantic a
 orFail x e = maybe (throwError e) pure x
 
-findStruct :: Text -> Semantic (Vector (Type 'Checked))
+findStruct :: Located Text -> Semantic (Vector (Type 'Checked))
 findStruct n = do
     ss <- use structs
-    Map.lookup n ss `orFail` StructNotFound n
+    Map.lookup (unpack n) ss `orFail` StructNotFound n
 
-findEnum :: Text -> Semantic (Map Text (Int, Vector (Type 'Checked)))
+findEnum :: Located Text -> Semantic (Map Text (Int, Vector (Type 'Checked)))
 findEnum n = do
     es <- use enums
-    Map.lookup n es `orFail` EnumNotFound n
+    Map.lookup (unpack n) es `orFail` EnumNotFound n
 
-findEnumVariant :: Text -> Text -> Semantic (Int, Vector (Type 'Checked))
+findEnumVariant :: Located Text -> Located Text -> Semantic (Int, Vector (Type 'Checked))
 findEnumVariant n v = do
     e <- findEnum n
-    Map.lookup v e `orFail` EnumVariantNotFound n v
+    Map.lookup (unpack v) e `orFail` EnumVariantNotFound (locate v) (unpack n) (unpack v)
 
-findConst :: Text -> Semantic (Type 'Checked)
+findConst :: Located Text -> Semantic (Type 'Checked)
 findConst n = do
     cs <- use consts
-    Map.lookup n cs `orFail` ConstNotFound n
+    Map.lookup (unpack n) cs `orFail` ConstNotFound n
 
 bindString :: Text -> Semantic Int
 bindString s = do
@@ -258,15 +142,15 @@ bindString s = do
     strings .= Map.insert s i ss
     pure i
 
-findFn :: Text -> Semantic (Vector (Type 'Checked), Type 'Checked)
+findFn :: Located Text -> Semantic (Vector (Type 'Checked), Type 'Checked)
 findFn n = do
     fs <- use fns
-    Map.lookup n fs `orFail` FnNotFound n
+    Map.lookup (unpack n) fs `orFail` FnNotFound n
 
-findValue :: Text -> Semantic (Type 'Checked)
+findValue :: Located Text -> Semantic (Type 'Checked)
 findValue x = do
     vs <- use values
-    Map.lookup x vs `orFail` ValueNotFound x
+    Map.lookup (unpack x) vs `orFail` ValueNotFound x
 
 bindValue :: Text -> Type 'Checked -> Semantic ()
 bindValue x t = values %= Map.insert x t
@@ -286,7 +170,7 @@ intrinsicFns =
     ]
 
 semantic :: String -> Text -> Module 'Unchecked -> Either String (Module 'Checked)
-semantic filePath s = first (errorBundlePretty . wrap) . checkModule
+semantic filePath s = first showError . checkModule
   where
     initialPosState = PosState
         { pstateInput = s
@@ -296,53 +180,275 @@ semantic filePath s = first (errorBundlePretty . wrap) . checkModule
         , pstateLinePrefix = mempty
         }
 
-    wrap e = ParseErrorBundle
-        { bundleErrors = NonEmpty.singleton (FancyError 0 (Set.singleton (ErrorCustom e)))
+    parseErrorBundle :: Location -> String -> ParseErrorBundle Text Void
+    parseErrorBundle location message = ParseErrorBundle
+        { bundleErrors = NonEmpty.singleton (FancyError (offset location) (Set.singleton (ErrorFail message)))
         , bundlePosState = initialPosState
         }
+
+    prettyTypeList :: [Type u] -> String
+    prettyTypeList = \case
+        [] -> "<none>"
+        ts -> intercalate ", " ["`" <> prettyType t <> "`" | t <- ts]
+
+    showError :: SemanticError -> String
+    showError = \case
+        RedefinedType (Located location d) -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "A type named `" <> Text.unpack (typeDefName d) <> "` was already defined earlier in this file."
+        RedefinedFn (Located location d) -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "A function named `" <> Text.unpack (fnDefName d) <> "` was already defined earlier in this file."
+        StructOrEnumNotFound (Located location n) -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "Type `" <> Text.unpack n <> "` not found."
+        TypeCycle typeCycle -> "The following types form a cycle: " <> intercalate ", " names
+          where
+            names = ["`" <> Text.unpack (typeDefName d) <> "`" | d <- toList typeCycle]
+        StructNotFound (Located location n) -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "Struct `" <> Text.unpack n <> "` not found."
+        EnumNotFound (Located location n) -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "Enum `" <> Text.unpack n <> "` not found."
+        EnumVariantNotFound location n v -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "Enum variant `" <> Text.unpack (n <> "::" <> v) <> "` not found."
+        ConstNotFound (Located location n) -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "Constant `" <> Text.unpack n <> "` not found."
+        FnNotFound (Located location n) -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "Function `" <> Text.unpack n <> "` not found."
+        ValueNotFound (Located location n) -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "Value `" <> Text.unpack n <> "` not found."
+        ConstDefTypeMismatch location actual expected -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                intercalate
+                    "\n"
+                    [ "The right-hand side of this constant definition is of the wrong type."
+                    , ""
+                    , "Expected type:"
+                    , ""
+                    , "    `" <> prettyType expected <> "`"
+                    , ""
+                    , "Actual type:"
+                    , ""
+                    , "    `" <> prettyType actual <> "`"
+                    , ""
+                    ]
+        NegLitInitTypeMismatch (Located location t') -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "Type `" <> prettyType t' <> "` has no definition of `-`."
+        ArgumentTypesMismatch location actual expected -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                intercalate
+                    "\n"
+                    [ "Incorrect argument types."
+                    , ""
+                    , "Expected types:"
+                    , ""
+                    , "    " <> prettyTypeList (toList expected)
+                    , ""
+                    , "Actual types:"
+                    , ""
+                    , "    " <> prettyTypeList (toList actual)
+                    , ""
+                    ]
+        MainFnDefMissing -> "Main function not found."
+        MainFnDefArityMismatch location arity -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                "This function has "
+                <> show arity
+                <> " arguments, but the main function is required to have no arguments."
+        MainFnDefReturnTypeMismatch location returnType -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                "The declared return type of this function is `"
+                <> prettyType returnType
+                <> "`, but the return type of the main function is required to be `"
+                <> prettyType Unit
+                <> "`."
+        FnDefTypeMismatch location resultType returnType -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                "This function returns a value of type `"
+                <> prettyType resultType
+                <> "`, but its declared return type is `"
+                <> prettyType returnType
+                <> "`."
+        IfScrutineeTypeMismatch location actual -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                intercalate
+                    "\n"
+                    [ "The `if` scrutinee is of the wrong type."
+                    , ""
+                    , "Expected type:"
+                    , ""
+                    , "    `" <> prettyType Bool <> "`"
+                    , ""
+                    , "Actual type:"
+                    , ""
+                    , "    `" <> prettyType actual <> "`"
+                    , ""
+                    ]
+        IfBlocksTypeMismatch location actual expected -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                intercalate
+                    "\n"
+                    [ "This block is of a different type than the first block of the enclosing `if`."
+                    , ""
+                    , "Expected type:"
+                    , ""
+                    , "    `" <> prettyType expected <> "`"
+                    , ""
+                    , "Actual type:"
+                    , ""
+                    , "    `" <> prettyType actual <> "`"
+                    , ""
+                    ]
+        MatchScrutineeTypeMismatch location t0 -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "This `match` scrutinee is of type `" <> prettyType t0 <> "`, which is not an enum."
+        MatchArmEnumMismatch location actual expected -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                "This `match` arm refers to an enum named `"
+                <> Text.unpack actual
+                <> "`, which is different from the expected `"
+                <> Text.unpack expected
+                <> "`."
+        MatchArmEnumVariantNotFound location n v -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "Enum variant `" <> Text.unpack (n <> "::" <> v) <> "` not found."
+        MatchArmTypeMismatch location t1 t0 -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                intercalate
+                    "\n"
+                    [ "This block is of a different type than the first block of the enclosing `match`."
+                    , ""
+                    , "Expected type:"
+                    , ""
+                    , "    `" <> prettyType t0 <> "`"
+                    , ""
+                    , "Actual type:"
+                    , ""
+                    , "    `" <> prettyType t1 <> "`"
+                    , ""
+                    ]
+        MatchArmEnumVariantsDuplicated location n vs -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                intercalate
+                    "\n"
+                    [ "The following enum variants are matched by more than one arm:"
+                    , ""
+                    , "    " <> intercalate ", " [Text.unpack ("`" <> n <> "::" <> v <> "`") | v <- toList vs]
+                    , ""
+                    ]
+        MatchArmEnumVariantsMissing location n vs -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                intercalate
+                    "\n"
+                    [ "The following enum variants are matched by zero arms:"
+                    , ""
+                    , "    " <> intercalate ", " [Text.unpack ("`" <> n <> "::" <> v <> "`") | v <- toList vs]
+                    , ""
+                    ]
+        StructPatternArityMismatch location actual expected -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                "This pattern has "
+                <> show actual
+                <> " arguments, but it was expected to have "
+                <> show expected
+                <> "."
+        StructPatternTypeMismatch location actual expected -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                "The right-hand side of this pattern is of type `"
+                <> prettyType actual
+                <> "`, but it was expected to be of type `"
+                <> prettyType expected
+                <> "`."
+        UnaryOpTypeMismatch location o t -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                "The operator `"
+                <> prettyUnaryOp o
+                <> "` is not defined for the type `"
+                <> prettyType t
+                <> "`."
+        BinaryOpTypeMismatch location o t0 t1 -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message =
+                "The operator `"
+                <> prettyBinaryOp o
+                <> "` is not defined for the types `"
+                <> prettyType t0
+                <> "`, `"
+                <> prettyType t1
+                <> "`."
+        PrintLnExprExcessHole location -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "No argument was given for this hole."
+        PrintLnExprExcessArg location -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "No hole was given for this argument"
+        PrintLnExprTypeMismatch (Located location t) -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "The type `" <> prettyType t <> "` is not printable."
 
 checkModule :: Module 'Unchecked -> Either SemanticError (Module 'Checked)
 checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
     -- Check for redefined types.
-    let typeDefsByName = sortAndGroupBy typeDefName typeDefs
+    let typeDefsByName = sortAndGroupBy (typeDefName . unpack) typeDefs
 
     for_ typeDefsByName \case
         _ : d : _ -> throwError (RedefinedType d)
         _ -> pure ()
 
     -- Check for redefined functions.
-    let fnDefsByName = sortAndGroupBy fnDefName fnDefs
+    let fnDefsByName = sortAndGroupBy (fnDefName . unpack) fnDefs
 
     for_ fnDefsByName \case
         _ : d : _ -> throwError (RedefinedFn d)
         _ -> pure ()
 
     -- Resolve all types.
-    typeDefs' <- traverse resolveTypeDef typeDefs
+    typeDefs' <- traverse resolveTypeDef (fmap unpack typeDefs)
 
-    let constDecls = [d | ConstDef d _ <- constDefs]
+    let constDecls = [d | UncheckedConstDef d _ <- fmap unpack constDefs]
 
-    let constInits = [c | ConstDef _ c <- constDefs]
+    let constInits = [c | UncheckedConstDef _ c <- fmap unpack constDefs]
 
     -- Resolve all constant declarations.
     constDecls' <- traverse resolveConstDecl constDecls
 
-    let fnDecls = [d | FnDef d _ <- fnDefs]
+    let fnDecls = [d | FnDef d _ <- fmap unpack fnDefs]
 
-    let fnBodies = [b | FnDef _ b <- fnDefs]
+    let fnBodies = [b | FnDef _ b <- fmap unpack fnDefs]
 
     -- Resolve all function declaractions.
     fnDecls' <- traverse resolveFnDecl fnDecls
 
     -- Check that the type definition graph is acyclic.
-    void (first TypeCycle (sortTypeDefs typeDefs))
+    void (first TypeCycle (sortTypeDefs (fmap unpack typeDefs)))
 
     let context = Context
             { _structs = Map.fromList [(n, ts) | StructDef n ts <- typeDefs']
             , _enums = Map.fromList [(n, enumVariants vs) | EnumDef n vs <- typeDefs']
             , _consts = Map.fromList [(n, t) | ConstDecl n t <- constDecls']
             , _strings = mempty
-            , _fns = Map.fromList (intrinsicFns <> [(n, (fmap fnArgType as, t)) | FnDecl n as t <- fnDecls'])
+            , _fns = Map.fromList (intrinsicFns <> [(n, (fmap fnArgType as, t)) | CheckedFnDecl n as t <- fnDecls'])
             , _values = mempty
             }
 
@@ -350,25 +456,32 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
     constDefs' <- evalSemantic (zipWithM constDef constDecls' constInits) context
 
     -- Check all function definitions.
-    (fnDefs', context') <- runSemantic (zipWithM fnDef fnDecls' fnBodies) context
+    (fnDefs', context') <- runSemantic (zipWithM checkFnDef fnDecls' fnBodies) context
 
     let internPool = Vector.fromList (fmap fst (sortOn snd (Map.toList (view strings context'))))
 
     -- Check that there is exactly one main function, of the right signature.
     let (otherFnDefs', mainFnDefs') = partition ((/= "main") . fnDefName) fnDefs'
 
+    let fnDeclsByName = Map.fromList [(fnDeclName d, d) | d <- fnDecls]
+
     case mainFnDefs' of
         [] -> throwError MainFnDefMissing
-        [mainFnDef'@(FnDef (FnDecl _ as t) _)]
-            | Vector.null as, t == Unit -> pure (CheckedModule typeDefs' constDefs' internPool otherFnDefs' mainFnDef')
-            | otherwise -> throwError (MainFnDefTypeMismatch mainFnDef')
-        _ -> error ("Internal error: expected a single main function, got `" <> show mainFnDefs' <> "`.")
+        [mainFnDef'@(FnDef (CheckedFnDecl _ as' returnType) _)] -> do
+            when (arity /= 0) (throwError (MainFnDefArityMismatch arityLocation arity))
+            when (returnType /= Unit) (throwError (MainFnDefReturnTypeMismatch returnTypeLocation returnType))
+            pure (CheckedModule typeDefs' constDefs' internPool otherFnDefs' mainFnDef')
+          where
+            UncheckedFnDecl _ (Located arityLocation _) (Located returnTypeLocation _) = fnDeclsByName Map.! "main"
+
+            arity = Vector.length as'
+        _ -> error ("Internal error: expected at most one main function, got `" <> show mainFnDefs' <> "`.")
   where
     sortAndGroupBy key = groupBy ((==) `on` key) . sortOn key
 
-    structNames = Set.fromList [n | StructDef n _ <- typeDefs]
+    structNames = Set.fromList [n | StructDef n _ <- fmap unpack typeDefs]
 
-    enumNames = Set.fromList [n | EnumDef n _ <- typeDefs]
+    enumNames = Set.fromList [n | EnumDef n _ <- fmap unpack typeDefs]
 
     resolveType = \case
         Unit -> pure Unit
@@ -376,14 +489,14 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
         I64 -> pure I64
         F64 -> pure F64
         StructOrEnum n
-            | isStruct && isEnum -> error ("Internal error: `" <> Text.unpack n <> "` is both a struct and an enum.")
-            | isStruct -> pure (Struct n)
-            | isEnum -> pure (Enum n)
+            | isStruct && isEnum -> error ("Internal error: `" <> Text.unpack (unpack n) <> "` is both a struct and an enum.")
+            | isStruct -> pure (Struct (unpack n))
+            | isEnum -> pure (Enum (unpack n))
             | otherwise -> throwError (StructOrEnumNotFound n)
           where
-            isStruct = n `Set.member` structNames
+            isStruct = unpack n `Set.member` structNames
 
-            isEnum = n `Set.member` enumNames
+            isEnum = unpack n `Set.member` enumNames
 
     resolveTypeDef = \case
         StructDef n ts -> do
@@ -401,10 +514,10 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
         constDeclType <- resolveType t
         pure (ConstDecl x constDeclType)
 
-    resolveFnDecl (FnDecl n as t) = do
-        as' <- traverse resolveFnArg as
-        t' <- resolveType t
-        pure (FnDecl n as' t')
+    resolveFnDecl (UncheckedFnDecl n as t) = do
+        as' <- traverse resolveFnArg (unpack as)
+        t' <- resolveType (unpack t)
+        pure (CheckedFnDecl n as' t')
       where
         resolveFnArg (FnArg an at) = do
             at' <- resolveType at
@@ -422,83 +535,86 @@ sortTypeDefs typeDefs = bimap (fmap fromLabel) (fmap fromLabel) (topSort graph)
     fromLabel = (Map.fromList (indexed typeDefs) Map.!)
 
     neighbors = \case
-        StructDef _ ts -> [toLabel n | StructOrEnum n <- toList ts]
-        EnumDef _ vs -> [toLabel n | EnumVariant _ ts <- vs, StructOrEnum n <- toList ts]
+        StructDef _ ts -> [toLabel (unpack n) | StructOrEnum n <- toList ts]
+        EnumDef _ vs -> [toLabel (unpack n) | EnumVariant _ ts <- vs, StructOrEnum n <- toList ts]
 
     graph = stars [(toLabel (typeDefName d), neighbors d) | d <- typeDefs]
 
-fnDef :: FnDecl 'Checked -> Block 'Unchecked -> Semantic (FnDef 'Checked)
-fnDef d@(FnDecl n as returnType) b = do
+checkFnDef :: FnDecl 'Checked -> Block 'Unchecked -> Semantic (FnDef 'Checked)
+checkFnDef d@(CheckedFnDecl _ as returnType) b = do
     (b', resultType) <- namespaced do
         traverse_ bindFnArg as
         block b
-    when (returnType /= resultType) (throwError (FnDefTypeMismatch n returnType resultType))
+    when (resultType /= returnType) (throwError (FnDefTypeMismatch (locateBlock b) resultType returnType))
     pure (FnDef d b')
   where
     bindFnArg (FnArg an at) = bindValue an at
 
 block :: Block 'Unchecked -> Semantic (Block 'Checked, Type 'Checked)
-block (Block ss e) = do
-    ss' <- traverse statement ss
-    (e', t) <- expr e
-    pure (Block ss' e', t)
+block (UncheckedBlock ss e) = do
+    ss' <- traverse (statement . unpack) ss
+    (e', t) <- expr (unpack e)
+    pure (CheckedBlock ss' e', t)
 
 statement :: Statement 'Unchecked -> Semantic (Statement 'Checked)
 statement = \case
-    LetStatement (VarPattern x) e -> do
+    UncheckedLetStatement (VarPattern x) e -> do
         (e', t) <- expr e
         bindValue x t
-        pure (LetStatement (VarPattern x) e')
-    LetStatement (UncheckedStructPattern n xs) e -> do
+        pure (CheckedLetStatement (VarPattern x) e')
+    UncheckedLetStatement (UncheckedStructPattern n xs) e -> do
         fieldTypes <- findStruct n
-        when (Vector.length xs /= Vector.length fieldTypes) (throwError (StructPatternArityMismatch n xs))
-        (e', t) <- expr e
-        when (Struct n /= t) (throwError (StructPatternTypeMismatch n e t))
-        let xts = Vector.zip xs fieldTypes
+        let actualArity = Vector.length (unpack xs)
+        let expectedArity = Vector.length fieldTypes
+        when (actualArity /= expectedArity) (throwError (StructPatternArityMismatch (locate xs) actualArity expectedArity))
+        (e', actualType) <- expr e
+        let expectedType = Struct (unpack n)
+        when (actualType /= expectedType) (throwError (StructPatternTypeMismatch (locateExpr e) actualType expectedType))
+        let xts = Vector.zip (unpack xs) fieldTypes
         traverse_ (uncurry bindValue) xts
-        pure (LetStatement (CheckedStructPattern xts) e')
-    ExprStatement e -> do
+        pure (CheckedLetStatement (CheckedStructPattern xts) e')
+    UncheckedExprStatement e -> do
         (e', _) <- expr e
-        pure (ExprStatement e')
+        pure (CheckedExprStatement e')
 
 expr :: Expr 'Unchecked -> Semantic (Expr 'Checked, Type 'Checked)
 expr = \case
-    ExprWithBlock e -> fmap (first ExprWithBlock) (exprWithBlock e)
-    ExprWithoutBlock e -> fmap (first ExprWithoutBlock) (exprWithoutBlock e)
+    UncheckedExprWithBlock e -> fmap (first CheckedExprWithBlock) (exprWithBlock e)
+    UncheckedExprWithoutBlock e -> fmap (first CheckedExprWithoutBlock) (exprWithoutBlock (unpack e))
 
 exprWithBlock
     :: ExprWithBlock 'Unchecked
     -> Semantic (ExprWithBlock 'Checked, Type 'Checked)
 exprWithBlock = \case
     BlockExpr b -> fmap (first BlockExpr) (block b)
-    IfExpr e b0 b1 -> do
-        (e', t) <- exprWithoutBlock e
-        when (t /= Bool) (throwError (IfScrutineeTypeMismatch e t))
+    UncheckedIfExpr e b0 b1 -> do
+        (e', t) <- exprWithoutBlock (unpack e)
+        when (t /= Bool) (throwError (IfScrutineeTypeMismatch (locate e) t))
         (b0', t0) <- block b0
         (b1', t1) <- block b1
-        when (t0 /= t1) (throwError (IfBlocksTypeMismatch b0 t0 b1 t1))
-        pure (IfExpr e' b0' b1', t0)
+        when (t1 /= t0) (throwError (IfBlocksTypeMismatch (locateBlock b1) t1 t0))
+        pure (CheckedIfExpr e' b0' b1', t0)
     UncheckedMatchExpr e0 uncheckedMatchArms -> do
-        (e0', t0) <- exprWithoutBlock e0
+        (e0', t0) <- exprWithoutBlock (unpack e0)
         case t0 of
             Enum n0 -> do
                 -- Look up the enum variants using the unsafe `Map.!` operator;
                 -- if this fails, then we haven't set up the context correctly.
                 vs0 <- fmap (Map.! n0) (use enums)
 
-                checkedMatchArms <- for uncheckedMatchArms \(UncheckedMatchArm n v xs e) -> do
-                    when (n /= n0) (throwError (MatchArmEnumMismatch n0 n))
-                    case Map.lookup v vs0 of
-                        Nothing -> throwError (MatchArmEnumVariantNotFound n0 v)
+                checkedMatchArms <- for (unpack uncheckedMatchArms) \(UncheckedMatchArm n v xs e) -> do
+                    when (unpack n /= n0) (throwError (MatchArmEnumMismatch (locate n) (unpack n) n0))
+                    case Map.lookup (unpack v) vs0 of
+                        Nothing -> throwError (MatchArmEnumVariantNotFound (locate v) n0 (unpack v))
                         Just (i, fieldTypes) -> do
-                            let actual = Vector.length xs
+                            let actual = Vector.length (unpack xs)
                             let expected = Vector.length fieldTypes
-                            when (actual /= expected) (throwError (MatchArmArityMismatch actual expected))
+                            when (actual /= expected) (throwError (StructPatternArityMismatch (locate xs) actual expected))
                             namespaced do
-                                let xts = Vector.zip xs fieldTypes
+                                let xts = Vector.zip (unpack xs) fieldTypes
                                 traverse_ (uncurry bindValue) xts
-                                (e', resultType) <- expr e
-                                pure (i, CheckedMatchArm xts e', resultType)
+                                (e', resultType) <- expr (unpack e)
+                                pure (i, CheckedMatchArm xts e', Located (locate e) resultType)
 
                 let coverageByIndex = histogram [i | (i, _, _) <- checkedMatchArms]
 
@@ -506,22 +622,25 @@ exprWithBlock = \case
 
                 case NonEmpty.nonEmpty [v0 | (v0, n) <- coverageByName, n > 1] of
                     Nothing -> pure ()
-                    Just actual -> throwError (MatchArmEnumVariantsDuplicated n0 actual)
+                    Just actual -> throwError (MatchArmEnumVariantsDuplicated (locate e0) n0 actual)
 
                 case NonEmpty.nonEmpty [v0 | (v0, 0) <- coverageByName] of
                     Nothing -> pure ()
-                    Just actual -> throwError (MatchArmEnumVariantsMissing n0 actual)
+                    Just actual -> throwError (MatchArmEnumVariantsMissing (locate e0) n0 actual)
 
                 case checkedMatchArms of
                     [] -> pure (CheckedMatchExpr e0' n0 [], Unit)
-                    (_, _, expected) : _
-                        | actual : _ <- otherReturnTypes -> throwError (MatchArmTypeMismatch actual expected)
-                        | otherwise -> pure (CheckedMatchExpr e0' n0 sortedCheckedMatchArms, expected)
-                      where
-                        otherReturnTypes = fmap (view _3) (filter ((/= expected) . view _3) checkedMatchArms)
+                    (_, _, expected) : _ -> do
+                        let resultTypes = fmap (view _3) checkedMatchArms
 
+                        let otherResultTypes = filter (((/=) `on` unpack) expected) resultTypes
+
+                        case otherResultTypes of
+                            [] -> pure (CheckedMatchExpr e0' n0 sortedCheckedMatchArms, unpack expected)
+                            actual : _ -> throwError (MatchArmTypeMismatch (locate actual) (unpack actual) (unpack expected))
+                      where
                         sortedCheckedMatchArms = fmap (view _2) (sortOn (view _1) checkedMatchArms)
-            _ -> throwError (MatchScrutineeTypeMismatch e0 t0)
+            _ -> throwError (MatchScrutineeTypeMismatch (locate e0) t0)
   where
     -- This type signature ties down the type of @1@.
     histogram :: Ord a => [a] -> Map a Int
@@ -538,65 +657,65 @@ exprWithoutBlock = \case
     LitExpr l -> pure (LitExpr l, litType l)
     UncheckedVarExpr x -> do
         t <- findValue x
-        pure (CheckedVarExpr x t, t)
+        pure (CheckedVarExpr (unpack x) t, t)
     UncheckedConstExpr x -> do
         t <- findConst x
-        pure (CheckedConstExpr x t, t)
-    UnaryOpExpr o e -> do
+        pure (CheckedConstExpr (unpack x) t, t)
+    UncheckedUnaryOpExpr o e -> do
         (e', t) <- exprWithoutBlock e
-        case (o, t) of
-            (Neg, I64) -> pure (UnaryOpExpr Neg e', I64)
-            (Neg, F64) -> pure (UnaryOpExpr FNeg e', F64)
-            (Not, Bool) -> pure (UnaryOpExpr Not e', Bool)
-            (As F64, I64) -> pure (UnaryOpExpr AsF64 e', F64)
-            (As I64, F64) -> pure (UnaryOpExpr AsI64 e', I64)
-            _ -> throwError (UnaryOpTypeMismatch o e t)
-    BinaryOpExpr o e0 e1 -> do
+        case (unpack o, t) of
+            (Neg, I64) -> pure (CheckedUnaryOpExpr Neg e', I64)
+            (Neg, F64) -> pure (CheckedUnaryOpExpr FNeg e', F64)
+            (Not, Bool) -> pure (CheckedUnaryOpExpr Not e', Bool)
+            (As F64, I64) -> pure (CheckedUnaryOpExpr AsF64 e', F64)
+            (As I64, F64) -> pure (CheckedUnaryOpExpr AsI64 e', I64)
+            _ -> throwError (UnaryOpTypeMismatch (locate o) (unpack o) t)
+    UncheckedBinaryOpExpr o e0 e1 -> do
         (e0', t0) <- exprWithoutBlock e0
         (e1', t1) <- exprWithoutBlock e1
-        case (o, t0, t1) of
-            (Mul, I64, I64) -> pure (BinaryOpExpr Mul e0' e1', I64)
-            (Mul, F64, F64) -> pure (BinaryOpExpr FMul e0' e1', F64)
-            (Div, I64, I64) -> pure (BinaryOpExpr Div e0' e1', I64)
-            (Div, F64, F64) -> pure (BinaryOpExpr FDiv e0' e1', F64)
-            (Rem, I64, I64) -> pure (BinaryOpExpr Rem e0' e1', I64)
-            (Rem, F64, F64) -> pure (BinaryOpExpr FRem e0' e1', F64)
-            (Add, I64, I64) -> pure (BinaryOpExpr Add e0' e1', I64)
-            (Add, F64, F64) -> pure (BinaryOpExpr FAdd e0' e1', F64)
-            (Sub, I64, I64) -> pure (BinaryOpExpr Sub e0' e1', I64)
-            (Sub, F64, F64) -> pure (BinaryOpExpr FSub e0' e1', F64)
-            (Shl, I64, I64) -> pure (BinaryOpExpr Shl e0' e1', I64)
-            (Shr, I64, I64) -> pure (BinaryOpExpr Shr e0' e1', I64)
-            (BitAnd, I64, I64) -> pure (BinaryOpExpr BitAnd e0' e1', I64)
-            (BitXor, I64, I64) -> pure (BinaryOpExpr BitXor e0' e1', I64)
-            (BitOr, I64, I64) -> pure (BinaryOpExpr BitOr e0' e1', I64)
-            (Cmp p, I64, I64) -> pure (BinaryOpExpr (Icmp p) e0' e1', Bool)
-            (Cmp p, F64, F64) -> pure (BinaryOpExpr (Fcmp p) e0' e1', Bool)
-            (And, Bool, Bool) -> pure (BinaryOpExpr And e0' e1', Bool)
-            (Or, Bool, Bool) -> pure (BinaryOpExpr Or e0' e1', Bool)
-            _ -> throwError (BinaryOpTypeMismatch o e0 t0 e1 t1)
+        case (unpack o, t0, t1) of
+            (Mul, I64, I64) -> pure (CheckedBinaryOpExpr Mul e0' e1', I64)
+            (Mul, F64, F64) -> pure (CheckedBinaryOpExpr FMul e0' e1', F64)
+            (Div, I64, I64) -> pure (CheckedBinaryOpExpr Div e0' e1', I64)
+            (Div, F64, F64) -> pure (CheckedBinaryOpExpr FDiv e0' e1', F64)
+            (Rem, I64, I64) -> pure (CheckedBinaryOpExpr Rem e0' e1', I64)
+            (Rem, F64, F64) -> pure (CheckedBinaryOpExpr FRem e0' e1', F64)
+            (Add, I64, I64) -> pure (CheckedBinaryOpExpr Add e0' e1', I64)
+            (Add, F64, F64) -> pure (CheckedBinaryOpExpr FAdd e0' e1', F64)
+            (Sub, I64, I64) -> pure (CheckedBinaryOpExpr Sub e0' e1', I64)
+            (Sub, F64, F64) -> pure (CheckedBinaryOpExpr FSub e0' e1', F64)
+            (Shl, I64, I64) -> pure (CheckedBinaryOpExpr Shl e0' e1', I64)
+            (Shr, I64, I64) -> pure (CheckedBinaryOpExpr Shr e0' e1', I64)
+            (BitAnd, I64, I64) -> pure (CheckedBinaryOpExpr BitAnd e0' e1', I64)
+            (BitXor, I64, I64) -> pure (CheckedBinaryOpExpr BitXor e0' e1', I64)
+            (BitOr, I64, I64) -> pure (CheckedBinaryOpExpr BitOr e0' e1', I64)
+            (Cmp p, I64, I64) -> pure (CheckedBinaryOpExpr (Icmp p) e0' e1', Bool)
+            (Cmp p, F64, F64) -> pure (CheckedBinaryOpExpr (Fcmp p) e0' e1', Bool)
+            (And, Bool, Bool) -> pure (CheckedBinaryOpExpr And e0' e1', Bool)
+            (Or, Bool, Bool) -> pure (CheckedBinaryOpExpr Or e0' e1', Bool)
+            _ -> throwError (BinaryOpTypeMismatch (locate o) (unpack o) t0 t1)
     UncheckedCallExpr n es -> do
-        ets' <- traverse exprWithoutBlock es
+        ets' <- traverse exprWithoutBlock (unpack es)
         let ts = fmap snd ets'
         (argumentTypes, returnType) <- findFn n
-        when (ts /= argumentTypes) (throwError (CallExprTypeMismatch n es ts))
-        pure (CheckedCallExpr n (fmap fst ets') returnType, returnType)
+        when (ts /= argumentTypes) (throwError (ArgumentTypesMismatch (locate es) ts argumentTypes))
+        pure (CheckedCallExpr (unpack n) (fmap fst ets') returnType, returnType)
     UncheckedStructExpr n es -> do
-        ets' <- traverse exprWithoutBlock es
+        ets' <- traverse exprWithoutBlock (unpack es)
         let ts = fmap snd ets'
         fieldTypes <- findStruct n
-        when (ts /= fieldTypes) (throwError (StructExprTypeMismatch n es ts))
-        pure (CheckedStructExpr n ets', Struct n)
+        when (ts /= fieldTypes) (throwError (ArgumentTypesMismatch (locate es) ts fieldTypes))
+        pure (CheckedStructExpr (unpack n) ets', Struct (unpack n))
     UncheckedEnumExpr n v es -> do
-        ets' <- traverse exprWithoutBlock es
+        ets' <- traverse exprWithoutBlock (unpack es)
         let ts = fmap snd ets'
         (i, fieldTypes) <- findEnumVariant n v
-        when (ts /= fieldTypes) (throwError (EnumExprTypeMismatch n v es ts))
-        pure (CheckedEnumExpr n i ets', Enum n)
-    PrintLnExpr (UncheckedFormatString cs) es -> do
-        ets' <- traverse exprWithoutBlock es
+        when (ts /= fieldTypes) (throwError (ArgumentTypesMismatch (locate es) ts fieldTypes))
+        pure (CheckedEnumExpr (unpack n) i ets', Enum (unpack n))
+    UncheckedPrintLnExpr (UncheckedFormatString cs) es -> do
+        ets' <- traverse (traverse exprWithoutBlock) es
 
-        let ts = fmap snd ets'
+        let ts = fmap (fmap snd) ets'
 
         builder <- loop mempty cs ts
 
@@ -604,9 +723,9 @@ exprWithoutBlock = \case
 
         i <- bindString f
 
-        let es' = fmap fst ets'
+        let es' = fmap (fst . unpack) ets'
 
-        pure (PrintLnExpr (CheckedFormatString i) es', Unit)
+        pure (CheckedPrintLnExpr (CheckedFormatString i) es', Unit)
       where
         loop builder chunks types =
             let (builder', chunks') = nonHoles builder chunks in
@@ -614,9 +733,9 @@ exprWithoutBlock = \case
             hole builder' chunks' types
 
         nonHoles builder chunks =
-            let (prefix, chunks') = span (/= Hole) chunks in
+            let (prefix, chunks') = span ((/= Hole) . unpack) chunks in
 
-            let builder' = builder <> mconcat [Text.Lazy.Builder.fromText x | NonHole x <- prefix] in
+            let builder' = builder <> mconcat [Text.Lazy.Builder.fromText x | NonHole x <- fmap unpack prefix] in
 
             (builder', chunks')
 
@@ -625,29 +744,29 @@ exprWithoutBlock = \case
                 -- There are neither holes nor arguments left, so we are done.
                 ([], []) -> pure builder
                 -- There are too many holes.
-                (c : _, []) -> throwError (PrintLnExprExcessHole c)
+                (c : _, []) -> throwError (PrintLnExprExcessHole (locate c))
                 -- There are too many arguments.
-                ([], t : _) -> throwError (PrintLnExprExcessArg t)
+                ([], t : _) -> throwError (PrintLnExprExcessArg (locate t))
                 -- There are both holes and arguments left.
-                (Hole : chunks', t : types') -> do
+                (_ : chunks', t : types') -> do
                     s <- formatSpecifier t
                     loop (builder <> s) chunks' types'
-                -- Unreachable.
-                (c : _, _) -> error ("Internal error: unexpected `hole _ (" <> show c <> " : _) _`.")
 
-        formatSpecifier = \case
-            I64 -> pure "%lld"
-            F64 -> pure "%f"
-            t -> throwError (PrintLnExprTypeMismatch t)
+        formatSpecifier :: Located (Type 'Checked) -> Semantic Builder
+        formatSpecifier t =
+            case unpack t of
+                I64 -> pure "%lld"
+                F64 -> pure "%f"
+                _ -> throwError (PrintLnExprTypeMismatch t)
 
 constDef
     :: ConstDecl 'Checked
-    -> ConstInit 'Unchecked
+    -> Located (ConstInit 'Unchecked)
     -> Semantic (ConstDef 'Checked)
 constDef d@(ConstDecl _ constDeclType) c = do
-    (c', t) <- constInit c
-    when (constDeclType /= t) (throwError (ConstDefTypeMismatch d c t))
-    pure (ConstDef d c')
+    (c', t) <- constInit (unpack c)
+    when (t /= constDeclType) (throwError (ConstDefTypeMismatch (locate c) t constDeclType))
+    pure (CheckedConstDef d c')
 
 constInit
     :: ConstInit 'Unchecked
@@ -655,19 +774,19 @@ constInit
 constInit = \case
     LitInit l -> pure (LitInit l, litType l)
     UncheckedNegLitInit l ->
-        case l of
+        case unpack l of
             I64Lit x -> pure (NegI64LitInit x, I64)
             F64Lit x -> pure (NegF64LitInit x, F64)
-            _ -> throwError (NegLitInitTypeMismatch l (litType l))
-    StructInit n cs -> do
+            _ -> throwError (NegLitInitTypeMismatch (fmap litType l))
+    UncheckedStructInit n cs -> do
         fieldTypes <- findStruct n
-        cts' <- traverse constInit cs
+        cts' <- traverse constInit (unpack cs)
         let ts = fmap snd cts'
-        when (ts /= fieldTypes) (throwError (StructInitTypeMismatch n cs ts))
-        pure (StructInit n (fmap fst cts'), Struct n)
+        when (ts /= fieldTypes) (throwError (ArgumentTypesMismatch (locate cs) ts fieldTypes))
+        pure (CheckedStructInit (unpack n) (fmap fst cts'), Struct (unpack n))
     UncheckedEnumInit n v cs -> do
         (i, fieldTypes) <- findEnumVariant n v
-        cts' <- traverse constInit cs
+        cts' <- traverse constInit (unpack cs)
         let ts = fmap snd cts'
-        when (ts /= fieldTypes) (throwError (EnumInitTypeMismatch n v cs ts))
-        pure (CheckedEnumInit n i (fmap fst cts'), Enum n)
+        when (ts /= fieldTypes) (throwError (ArgumentTypesMismatch (locate cs) ts fieldTypes))
+        pure (CheckedEnumInit (unpack n) i (fmap fst cts'), Enum (unpack n))

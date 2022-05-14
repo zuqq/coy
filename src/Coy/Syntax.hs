@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
@@ -10,16 +11,21 @@ module Coy.Syntax where
 import Data.Text (Text)
 import Data.Vector (Vector)
 
+import qualified Data.Text as Text
+
 data Status = Unchecked | Checked
 
-data Located a = Located Int a
-    deriving Show
+newtype Location = Location {offset :: Int}
+    deriving (Eq, Ord, Show)
+
+data Located a = Located {locate :: Location, unpack :: a}
+    deriving (Eq, Foldable, Functor, Ord, Show, Traversable)
 
 data Module (u :: Status) where
     UncheckedModule
-        :: [TypeDef 'Unchecked]
-        -> [ConstDef 'Unchecked]
-        -> [FnDef 'Unchecked]
+        :: [Located (TypeDef 'Unchecked)]
+        -> [Located (ConstDef 'Unchecked)]
+        -> [Located (FnDef 'Unchecked)]
         -> Module 'Unchecked
 
     CheckedModule
@@ -53,10 +59,20 @@ data Type (u :: Status) where
     I64 :: Type u
     F64 :: Type u
 
-    StructOrEnum :: Text -> Type 'Unchecked
+    StructOrEnum :: Located Text -> Type 'Unchecked
 
     Struct :: Text -> Type 'Checked
     Enum :: Text -> Type 'Checked
+
+prettyType :: Type u -> String
+prettyType = \case
+    Unit -> "()"
+    Bool -> "bool"
+    I64 -> "i64"
+    F64 -> "f64"
+    StructOrEnum n -> Text.unpack (unpack n)
+    Struct n -> Text.unpack n
+    Enum n -> Text.unpack n
 
 deriving instance Eq (Type u)
 deriving instance Ord (Type u)
@@ -69,10 +85,21 @@ data FnDef (u :: Status) = FnDef (FnDecl u) (Block u)
     deriving (Eq, Ord, Show)
 
 fnDefName :: FnDef u -> Text
-fnDefName (FnDef (FnDecl n _ _) _) = n
+fnDefName (FnDef d _) = fnDeclName d
 
-data FnDecl (u :: Status) = FnDecl Text (Vector (FnArg u)) (Type u)
-    deriving (Eq, Ord, Show)
+data FnDecl (u :: Status) where
+    UncheckedFnDecl :: Text -> Located (Vector (FnArg 'Unchecked)) -> Located (Type 'Unchecked) -> FnDecl 'Unchecked
+
+    CheckedFnDecl :: Text -> Vector (FnArg 'Checked) -> Type 'Checked -> FnDecl 'Checked
+
+fnDeclName :: FnDecl u -> Text
+fnDeclName = \case
+  UncheckedFnDecl n _ _ -> n
+  CheckedFnDecl n _ _ -> n
+
+deriving instance Eq (FnDecl u)
+deriving instance Ord (FnDecl u)
+deriving instance Show (FnDecl u)
 
 data FnArg (u :: Status) = FnArg Text (Type u)
     deriving (Eq, Ord, Show)
@@ -80,18 +107,35 @@ data FnArg (u :: Status) = FnArg Text (Type u)
 fnArgType :: FnArg u -> Type u
 fnArgType (FnArg _ at) = at
 
-data Block (u :: Status) = Block (Vector (Statement u)) (Expr u)
-    deriving (Eq, Ord, Show)
+data Block (u :: Status) where
+    UncheckedBlock :: Vector (Located (Statement 'Unchecked)) -> Located (Expr 'Unchecked) -> Block 'Unchecked
 
-data Statement (u :: Status)
-    = LetStatement (Pattern u) (Expr u)
-    | ExprStatement (Expr u)
-    deriving (Eq, Ord, Show)
+    CheckedBlock :: Vector (Statement 'Checked) -> Expr 'Checked -> Block 'Checked
+
+deriving instance Eq (Block u)
+deriving instance Ord (Block u)
+deriving instance Show (Block u)
+
+locateBlock :: Block 'Unchecked -> Location
+locateBlock (UncheckedBlock _ e) = locate e
+
+data Statement (u :: Status) where
+    UncheckedLetStatement :: Pattern 'Unchecked -> Expr 'Unchecked -> Statement 'Unchecked
+
+    CheckedLetStatement :: Pattern 'Checked -> Expr 'Checked -> Statement 'Checked
+
+    UncheckedExprStatement :: Expr 'Unchecked -> Statement 'Unchecked
+
+    CheckedExprStatement :: Expr 'Checked -> Statement 'Checked
+
+deriving instance Eq (Statement u)
+deriving instance Ord (Statement u)
+deriving instance Show (Statement u)
 
 data Pattern (u :: Status) where
     VarPattern :: Text -> Pattern u
 
-    UncheckedStructPattern :: Text -> Vector Text -> Pattern 'Unchecked
+    UncheckedStructPattern :: Located Text -> Located (Vector Text) -> Pattern 'Unchecked
 
     CheckedStructPattern :: Vector (Text, Type 'Checked) -> Pattern 'Checked
 
@@ -99,19 +143,43 @@ deriving instance Eq (Pattern u)
 deriving instance Ord (Pattern u)
 deriving instance Show (Pattern u)
 
-data Expr (u :: Status)
-    = ExprWithBlock (ExprWithBlock u)
-    | ExprWithoutBlock (ExprWithoutBlock u)
-    deriving (Eq, Ord, Show)
+data Expr (u :: Status) where
+    UncheckedExprWithBlock :: ExprWithBlock 'Unchecked -> Expr 'Unchecked
+
+    CheckedExprWithBlock :: ExprWithBlock 'Checked -> Expr 'Checked
+
+    UncheckedExprWithoutBlock :: Located (ExprWithoutBlock 'Unchecked) -> Expr 'Unchecked
+
+    CheckedExprWithoutBlock :: ExprWithoutBlock 'Checked -> Expr 'Checked
+
+deriving instance Eq (Expr u)
+deriving instance Ord (Expr u)
+deriving instance Show (Expr u)
+
+locateExpr :: Expr 'Unchecked -> Location
+locateExpr = \case
+  UncheckedExprWithBlock e -> locateExprWithBlock e
+  UncheckedExprWithoutBlock e -> locate e
 
 data ExprWithBlock (u :: Status) where
     BlockExpr :: Block u -> ExprWithBlock u
-    IfExpr :: ExprWithoutBlock u -> Block u -> Block u -> ExprWithBlock u
+
+    UncheckedIfExpr
+        :: Located (ExprWithoutBlock 'Unchecked)
+        -> Block 'Unchecked
+        -> Block 'Unchecked
+        -> ExprWithBlock 'Unchecked
+
+    CheckedIfExpr
+        :: ExprWithoutBlock 'Checked
+        -> Block 'Checked
+        -> Block 'Checked
+        -> ExprWithBlock 'Checked
 
     UncheckedMatchExpr
-        :: ExprWithoutBlock 'Unchecked
+        :: Located (ExprWithoutBlock 'Unchecked)
         -- ^ Scrutinee.
-        -> [MatchArm 'Unchecked]
+        -> Located [MatchArm 'Unchecked]
         -- ^ Match arms.
         -> ExprWithBlock 'Unchecked
 
@@ -124,19 +192,31 @@ data ExprWithBlock (u :: Status) where
         -- ^ Match arms, ordered by variant.
         -> ExprWithBlock 'Checked
 
+-- Special treatment for expressions that are wrapped in a block, in order to
+-- point at the expression that determines the blocks' type, not the block
+-- itself.
+locateExprWithBlock :: ExprWithBlock 'Unchecked -> Location
+locateExprWithBlock = \case
+    BlockExpr b -> locateBlock b
+    UncheckedIfExpr _ b0 _ -> locateBlock b0
+    UncheckedMatchExpr _ as ->
+        case unpack as of
+            [] -> locate as
+            UncheckedMatchArm n _ _ _ : _ -> locate n
+
 deriving instance Eq (ExprWithBlock u)
 deriving instance Ord (ExprWithBlock u)
 deriving instance Show (ExprWithBlock u)
 
 data MatchArm (u :: Status) where
     UncheckedMatchArm
-        :: Text
+        :: Located Text
         -- ^ Name of the enum.
-        -> Text
+        -> Located Text
         -- ^ Name of the enum variant.
-        -> Vector Text
+        -> Located (Vector Text)
         -- ^ Names for the components.
-        -> Expr 'Unchecked
+        -> Located (Expr 'Unchecked)
         -- ^ Right-hand side of the match arm.
         -> MatchArm 'Unchecked
 
@@ -154,34 +234,50 @@ deriving instance Show (MatchArm u)
 data ExprWithoutBlock (u :: Status) where
     LitExpr :: Lit -> ExprWithoutBlock u
 
-    UncheckedVarExpr :: Text -> ExprWithoutBlock 'Unchecked
+    UncheckedVarExpr :: Located Text -> ExprWithoutBlock 'Unchecked
 
     CheckedVarExpr :: Text -> Type 'Checked -> ExprWithoutBlock 'Checked
 
-    UncheckedConstExpr :: Text -> ExprWithoutBlock 'Unchecked
+    UncheckedConstExpr :: Located Text -> ExprWithoutBlock 'Unchecked
 
     CheckedConstExpr :: Text -> Type 'Checked -> ExprWithoutBlock 'Checked
 
-    UnaryOpExpr
-        :: UnaryOp u
+    UncheckedUnaryOpExpr
+        :: Located (UnaryOp 'Unchecked)
         -- ^ The unary operator.
-        -> ExprWithoutBlock u
+        -> ExprWithoutBlock 'Unchecked
         -- ^ Argument.
-        -> ExprWithoutBlock u
+        -> ExprWithoutBlock 'Unchecked
 
-    BinaryOpExpr
-        :: BinaryOp u
+    CheckedUnaryOpExpr
+        :: UnaryOp 'Checked
+        -- ^ The unary operator.
+        -> ExprWithoutBlock 'Checked
+        -- ^ Argument.
+        -> ExprWithoutBlock 'Checked
+
+    UncheckedBinaryOpExpr
+        :: Located (BinaryOp 'Unchecked)
         -- ^ The binary operator.
-        -> ExprWithoutBlock u
+        -> ExprWithoutBlock 'Unchecked
         -- ^ First argument.
-        -> ExprWithoutBlock u
+        -> ExprWithoutBlock 'Unchecked
         -- ^ Second argument.
-        -> ExprWithoutBlock u
+        -> ExprWithoutBlock 'Unchecked
+
+    CheckedBinaryOpExpr
+        :: BinaryOp 'Checked
+        -- ^ The binary operator.
+        -> ExprWithoutBlock 'Checked
+        -- ^ First argument.
+        -> ExprWithoutBlock 'Checked
+        -- ^ Second argument.
+        -> ExprWithoutBlock 'Checked
 
     UncheckedCallExpr
-        :: Text
+        :: Located Text
         -- ^ Name of the function.
-        -> Vector (ExprWithoutBlock 'Unchecked)
+        -> Located (Vector (ExprWithoutBlock 'Unchecked))
         -- ^ Arguments.
         -> ExprWithoutBlock 'Unchecked
 
@@ -195,9 +291,9 @@ data ExprWithoutBlock (u :: Status) where
         -> ExprWithoutBlock 'Checked
 
     UncheckedStructExpr
-        :: Text
+        :: Located Text
         -- ^ Name of the struct.
-        -> Vector (ExprWithoutBlock 'Unchecked)
+        -> Located (Vector (ExprWithoutBlock 'Unchecked))
         -- ^ Arguments.
         -> ExprWithoutBlock 'Unchecked
 
@@ -209,11 +305,11 @@ data ExprWithoutBlock (u :: Status) where
         -> ExprWithoutBlock 'Checked
 
     UncheckedEnumExpr
-        :: Text
+        :: Located Text
         -- ^ Name of the enum.
-        -> Text
+        -> Located Text
         -- ^ Name of the enum variant.
-        -> Vector (ExprWithoutBlock 'Unchecked)
+        -> Located (Vector (ExprWithoutBlock 'Unchecked))
         -- ^ Arguments.
         -> ExprWithoutBlock 'Unchecked
 
@@ -226,12 +322,19 @@ data ExprWithoutBlock (u :: Status) where
         -- ^ Arguments with their types.
         -> ExprWithoutBlock 'Checked
 
-    PrintLnExpr
-        :: FormatString u
+    UncheckedPrintLnExpr
+        :: FormatString 'Unchecked
         -- ^ The format string.
-        -> [ExprWithoutBlock u]
+        -> [Located (ExprWithoutBlock 'Unchecked)]
         -- ^ Arguments.
-        -> ExprWithoutBlock u
+        -> ExprWithoutBlock 'Unchecked
+
+    CheckedPrintLnExpr
+        :: FormatString 'Checked
+        -- ^ The format string.
+        -> [ExprWithoutBlock 'Checked]
+        -- ^ Arguments.
+        -> ExprWithoutBlock 'Checked
 
 deriving instance Eq (ExprWithoutBlock u)
 deriving instance Ord (ExprWithoutBlock u)
@@ -261,6 +364,15 @@ data UnaryOp (u :: Status) where
     As :: Type 'Unchecked -> UnaryOp 'Unchecked
     AsF64 :: UnaryOp 'Checked
     AsI64 :: UnaryOp 'Checked
+
+prettyUnaryOp :: UnaryOp u -> String
+prettyUnaryOp = \case
+    Neg -> "-"
+    FNeg -> "-"
+    Not -> "!"
+    As t -> "as " <> prettyType t
+    AsF64 -> "as f64"
+    AsI64 -> "as i64"
 
 deriving instance Eq (UnaryOp u)
 deriving instance Ord (UnaryOp u)
@@ -297,6 +409,29 @@ data BinaryOp (u :: Status) where
     -- Left-associative: @x || y@
     Or :: BinaryOp u
 
+prettyBinaryOp :: BinaryOp u -> String
+prettyBinaryOp = \case
+  Mul -> "*"
+  FMul -> "*"
+  Div -> "/"
+  FDiv -> "/"
+  Rem -> "%"
+  FRem -> "%"
+  Add -> "+"
+  FAdd -> "+"
+  Sub -> "-"
+  FSub -> "-"
+  Shl -> "<<"
+  Shr -> ">>"
+  BitAnd -> "&"
+  BitXor -> "^"
+  BitOr -> "|"
+  Cmp p -> prettyPredicate p
+  Icmp p -> prettyPredicate p
+  Fcmp p -> prettyPredicate p
+  And -> "&&"
+  Or -> "||"
+
 deriving instance Eq (BinaryOp u)
 deriving instance Ord (BinaryOp u)
 deriving instance Show (BinaryOp u)
@@ -310,8 +445,17 @@ data Predicate
     | Ge
     deriving (Eq, Ord, Show)
 
+prettyPredicate :: Predicate -> String
+prettyPredicate = \case
+  Eq -> "=="
+  Ne -> "!="
+  Lt -> "<"
+  Gt -> ">"
+  Le -> "<="
+  Ge -> ">="
+
 data FormatString (u :: Status) where
-    UncheckedFormatString :: [FormatStringChunk] -> FormatString 'Unchecked
+    UncheckedFormatString :: [Located FormatStringChunk] -> FormatString 'Unchecked
 
     CheckedFormatString :: Int -> FormatString 'Checked
 
@@ -322,8 +466,14 @@ deriving instance Show (FormatString u)
 data FormatStringChunk = Hole | NonHole Text
     deriving (Eq, Ord, Show)
 
-data ConstDef (u :: Status) = ConstDef (ConstDecl u) (ConstInit u)
-    deriving Show
+data ConstDef (u :: Status) where
+    UncheckedConstDef :: ConstDecl 'Unchecked -> Located (ConstInit 'Unchecked) -> ConstDef 'Unchecked
+
+    CheckedConstDef :: ConstDecl 'Checked -> ConstInit 'Checked -> ConstDef 'Checked
+
+deriving instance Eq (ConstDef u)
+deriving instance Ord (ConstDef u)
+deriving instance Show (ConstDef u)
 
 data ConstDecl (u :: Status) = ConstDecl Text (Type u)
     deriving (Eq, Ord, Show)
@@ -331,20 +481,22 @@ data ConstDecl (u :: Status) = ConstDecl Text (Type u)
 data ConstInit (u :: Status) where
     LitInit :: Lit -> ConstInit u
 
-    UncheckedNegLitInit :: Lit -> ConstInit 'Unchecked
+    UncheckedNegLitInit :: Located Lit -> ConstInit 'Unchecked
 
     NegI64LitInit :: Integer -> ConstInit 'Checked
 
     NegF64LitInit :: Double -> ConstInit 'Checked
 
-    StructInit :: Text -> Vector (ConstInit u) -> ConstInit u
+    UncheckedStructInit :: Located Text -> Located (Vector (ConstInit 'Unchecked)) -> ConstInit 'Unchecked
+
+    CheckedStructInit :: Text -> Vector (ConstInit 'Checked) -> ConstInit 'Checked
 
     UncheckedEnumInit
-        :: Text
+        :: Located Text
         -- ^ Name of the enum.
-        -> Text
+        -> Located Text
         -- ^ Name of the enum variant.
-        -> Vector (ConstInit 'Unchecked)
+        -> Located (Vector (ConstInit 'Unchecked))
         -- ^ Values for the components.
         -> ConstInit 'Unchecked
 
