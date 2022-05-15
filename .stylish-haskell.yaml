@@ -1,0 +1,8 @@
+steps:
+  - imports:
+      align: none
+      pad_module_names: false
+      long_list_align: new_line_multiline
+  - language_pragmas:
+      align: true
+columns: 120

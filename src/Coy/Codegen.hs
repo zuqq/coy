@@ -1,9 +1,9 @@
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE BlockArguments    #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE RecursiveDo       #-}
 
 module Coy.Codegen where
 
@@ -15,9 +15,9 @@ import Data.List.Index (ifor, ifor_)
 import Data.Map (Map)
 import Data.Text (Text)
 import Data.Vector (Vector)
-import LLVM.AST.ParameterAttribute (ParameterAttribute)
 import Lens.Micro (Lens', lens)
-import Lens.Micro.Mtl ((%=), (.=), (<~), use)
+import Lens.Micro.Mtl (use, (%=), (.=), (<~))
+import LLVM.AST.ParameterAttribute (ParameterAttribute)
 
 import qualified Data.ByteString.Char8 as ByteString.Char8
 import qualified Data.ByteString.Short as ByteString.Short

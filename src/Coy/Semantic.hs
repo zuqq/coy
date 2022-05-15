@@ -1,11 +1,11 @@
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE BlockArguments    #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE KindSignatures    #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections     #-}
 
 module Coy.Semantic where
 
@@ -28,7 +28,7 @@ import Data.Traversable (for)
 import Data.Vector (Vector)
 import Data.Void (Void)
 import Lens.Micro (Lens', _1, _2, _3, lens)
-import Lens.Micro.Mtl ((%=), (.=), use, view)
+import Lens.Micro.Mtl (use, view, (%=), (.=))
 import Text.Megaparsec
 
 import qualified Data.List.NonEmpty as NonEmpty

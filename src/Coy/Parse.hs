@@ -1,14 +1,14 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Coy.Parse where
 
-import Control.Applicative ((<|>), many)
+import Control.Applicative (many, (<|>))
 import Control.Monad.Combinators.Expr (Operator (InfixL, InfixN, Postfix, Prefix), makeExprParser)
 import Data.Bifunctor (bimap)
 import Data.Char (isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isDigit, isPrint)
-import Data.Functor (($>), void)
+import Data.Functor (void, ($>))
 import Data.Monoid (Endo (Endo, appEndo))
 import Data.Text (Text)
 import Data.Void (Void)

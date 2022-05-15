@@ -1,9 +1,9 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE DeriveTraversable  #-}
+{-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE GADTs              #-}
+{-# LANGUAGE KindSignatures     #-}
+{-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 module Coy.Syntax where
