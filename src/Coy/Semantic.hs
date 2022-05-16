@@ -286,7 +286,7 @@ semantic filePath s = first showError . checkModule
             message =
                 intercalate
                     "\n"
-                    [ "The `if` scrutinee is of the wrong type."
+                    [ "This `if` scrutinee is of the wrong type."
                     , ""
                     , "Expected type:"
                     , ""
