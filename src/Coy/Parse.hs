@@ -152,9 +152,10 @@ exprWithBlock = blockExpr <|> ifExpr <|> matchExpr
 
     matchExpr = do
         "match" *> space1
+        location <- fmap Location Parser.getOffset
         e <- located exprWithoutBlock
-        as <- located (withinBraces (commaSeparated matchArm))
-        pure (UncheckedMatchExpr e as)
+        as <- withinBraces (commaSeparated matchArm)
+        pure (UncheckedMatchExpr location e as)
 
 matchArm :: Parser (MatchArm 'Unchecked)
 matchArm = do
@@ -163,7 +164,7 @@ matchArm = do
     v <- located enumVariantName
     xs <- located (parenthesized (commaSeparated valueName))
     "=>" *> space
-    e <- located expr
+    e <- expr
     pure (UncheckedMatchArm n v (fmap Vector.fromList xs) e)
 
 exprWithoutBlock :: Parser (ExprWithoutBlock 'Unchecked)

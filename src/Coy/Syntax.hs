@@ -177,9 +177,11 @@ data ExprWithBlock (u :: Status) where
         -> ExprWithBlock 'Checked
 
     UncheckedMatchExpr
-        :: Located (ExprWithoutBlock 'Unchecked)
+        :: Location
+        -- ^ Start.
+        -> Located (ExprWithoutBlock 'Unchecked)
         -- ^ Scrutinee.
-        -> Located [MatchArm 'Unchecked]
+        -> [MatchArm 'Unchecked]
         -- ^ Match arms.
         -> ExprWithBlock 'Unchecked
 
@@ -199,10 +201,8 @@ locateExprWithBlock :: ExprWithBlock 'Unchecked -> Location
 locateExprWithBlock = \case
     BlockExpr b -> locateBlock b
     UncheckedIfExpr _ b0 _ -> locateBlock b0
-    UncheckedMatchExpr _ as ->
-        case unpack as of
-            [] -> locate as
-            UncheckedMatchArm n _ _ _ : _ -> locate n
+    UncheckedMatchExpr location _ [] -> location
+    UncheckedMatchExpr _ _ (UncheckedMatchArm n _ _ _ : _) -> locate n
 
 deriving instance Eq (ExprWithBlock u)
 deriving instance Ord (ExprWithBlock u)
@@ -216,7 +216,7 @@ data MatchArm (u :: Status) where
         -- ^ Name of the enum variant.
         -> Located (Vector Text)
         -- ^ Names for the components.
-        -> Located (Expr 'Unchecked)
+        -> Expr 'Unchecked
         -- ^ Right-hand side of the match arm.
         -> MatchArm 'Unchecked
 

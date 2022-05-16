@@ -27,7 +27,7 @@ import Data.Text.Lazy.Builder (Builder)
 import Data.Traversable (for)
 import Data.Vector (Vector)
 import Data.Void (Void)
-import Lens.Micro (Lens', _1, _2, _3, lens)
+import Lens.Micro (Lens', lens)
 import Lens.Micro.Mtl (use, view, (%=), (.=))
 import Text.Megaparsec
 
@@ -302,7 +302,7 @@ semantic filePath s = first showError . checkModule
             message =
                 intercalate
                     "\n"
-                    [ "This block is of a different type than the first block of the enclosing `if`."
+                    [ "This block returns a value of a different type than the first block of the enclosing `if`."
                     , ""
                     , "Expected type:"
                     , ""
@@ -594,7 +594,7 @@ exprWithBlock = \case
         (b1', t1) <- block b1
         when (t1 /= t0) (throwError (IfBlocksTypeMismatch (locateBlock b1) t1 t0))
         pure (CheckedIfExpr e' b0' b1', t0)
-    UncheckedMatchExpr e0 uncheckedMatchArms -> do
+    UncheckedMatchExpr _ e0 uncheckedMatchArms -> do
         (e0', t0) <- exprWithoutBlock (unpack e0)
         case t0 of
             Enum n0 -> do
@@ -602,7 +602,7 @@ exprWithBlock = \case
                 -- if this fails, then we haven't set up the context correctly.
                 vs0 <- fmap (Map.! n0) (use enums)
 
-                checkedMatchArms <- for (unpack uncheckedMatchArms) \(UncheckedMatchArm n v xs e) -> do
+                checkedMatchArms <- for uncheckedMatchArms \(UncheckedMatchArm n v xs e) -> do
                     when (unpack n /= n0) (throwError (MatchArmEnumMismatch (locate n) (unpack n) n0))
                     case Map.lookup (unpack v) vs0 of
                         Nothing -> throwError (MatchArmEnumVariantNotFound (locate v) n0 (unpack v))
@@ -613,10 +613,10 @@ exprWithBlock = \case
                             namespaced do
                                 let xts = Vector.zip (unpack xs) fieldTypes
                                 traverse_ (uncurry bindValue) xts
-                                (e', resultType) <- expr (unpack e)
-                                pure (i, CheckedMatchArm xts e', Located (locate e) resultType)
+                                (e', resultType) <- expr e
+                                pure (i, (CheckedMatchArm xts e', Located (locateExpr e) resultType))
 
-                let coverageByIndex = histogram [i | (i, _, _) <- checkedMatchArms]
+                let coverageByIndex = histogram [i | (i, _) <- checkedMatchArms]
 
                 let coverageByName = [(v0, occurrences i coverageByIndex) | (v0, (i, _)) <- Map.toList vs0]
 
@@ -630,16 +630,14 @@ exprWithBlock = \case
 
                 case checkedMatchArms of
                     [] -> pure (CheckedMatchExpr e0' n0 [], Unit)
-                    (_, _, expected) : _ -> do
-                        let resultTypes = fmap (view _3) checkedMatchArms
-
-                        let otherResultTypes = filter (((/=) `on` unpack) expected) resultTypes
+                    (_, (_, expected)) : _ -> do
+                        let otherResultTypes = [actual | (_, (_, actual)) <- checkedMatchArms, unpack actual /= unpack expected]
 
                         case otherResultTypes of
                             [] -> pure (CheckedMatchExpr e0' n0 sortedCheckedMatchArms, unpack expected)
                             actual : _ -> throwError (MatchArmTypeMismatch (locate actual) (unpack actual) (unpack expected))
                       where
-                        sortedCheckedMatchArms = fmap (view _2) (sortOn (view _1) checkedMatchArms)
+                        sortedCheckedMatchArms = [checkedMatchArm | (_, (checkedMatchArm, _)) <- sortOn fst checkedMatchArms]
             _ -> throwError (MatchScrutineeTypeMismatch (locate e0) t0)
   where
     -- This type signature ties down the type of @1@.
