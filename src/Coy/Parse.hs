@@ -6,13 +6,11 @@ module Coy.Parse where
 
 import Control.Applicative (many, (<|>))
 import Control.Monad.Combinators.Expr (Operator (InfixL, InfixN, Postfix, Prefix), makeExprParser)
-import Data.Bifunctor (bimap)
+import Data.Bifunctor (first)
 import Data.Char (isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isDigit, isPrint)
 import Data.Functor (void, ($>))
-import Data.Monoid (Endo (Endo, appEndo))
 import Data.Text (Text)
 import Data.Void (Void)
-import Lens.Micro (_1, _2, _3, over)
 import Text.Megaparsec (Parsec)
 import Text.Megaparsec.Error (errorBundlePretty)
 
@@ -24,34 +22,30 @@ import qualified Text.Megaparsec.Char.Lexer
 
 import Coy.Syntax
 
-parse :: String -> Text -> Either String (Module 'Unchecked)
-parse n s = do
-    (typeDefs, constDefs, fnDefs) <- bimap errorBundlePretty runAll (Parser.parse p n s)
+data ModuleItem
+    = TypeDefItem (Located (TypeDef 'Unchecked))
+    | ConstDefItem (Located (ConstDef 'Unchecked))
+    | FnDefItem (Located (FnDef 'Unchecked))
+    deriving Show
+
+parse :: FilePath -> Text -> Either String (Module 'Unchecked)
+parse filePath input = do
+    items <- first errorBundlePretty (Parser.parse parseModule filePath input)
+
+    let typeDefs = [d | TypeDefItem d <- items]
+
+    let constDefs = [d | ConstDefItem d <- items]
+
+    let fnDefs = [d | FnDefItem d <- items]
+
     pure (UncheckedModule typeDefs constDefs fnDefs)
   where
-    cons = Endo . (:)
+    parseModule = many parseModuleItem
 
-    run e = appEndo e mempty
-
-    runAll = over _1 run . over _2 run . over _3 run
-
-    p = space *> go mempty <* Parser.eof
-
-    -- Corresponds to @many@.
-    go e = go1 e <|> go2 e <|> go3 e <|> pure e
-
-    -- Correspond to different incarnations of @some@.
-    go1 e = do
-        td <- located typeDef
-        go (over _1 (<> cons td) e)
-
-    go2 e = do
-        cd <- located constDef
-        go (over _2 (<> cons cd) e)
-
-    go3 e = do
-        fd <- located fnDef
-        go (over _3 (<> cons fd) e)
+    parseModuleItem =
+        fmap TypeDefItem (located typeDef)
+        <|> fmap ConstDefItem (located constDef)
+        <|> fmap FnDefItem (located fnDef)
 
 type Parser = Parsec Void Text
 
