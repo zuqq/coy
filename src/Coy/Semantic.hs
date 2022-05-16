@@ -92,7 +92,7 @@ data SemanticError
     | MatchScrutineeTypeMismatch Location (Type 'Checked)
     | MatchArmEnumMismatch Location Text Text
     | MatchArmEnumVariantNotFound Location Text Text
-    | MatchArmTypeMismatch Location (Type 'Checked) (Type 'Checked)
+    | MatchArmResultTypeMismatch Location (Type 'Checked) (Type 'Checked)
     | MatchArmEnumVariantsDuplicated Location Text (NonEmpty Text)
     | MatchArmEnumVariantsMissing Location Text (NonEmpty Text)
     | StructPatternArityMismatch Location Int Int
@@ -101,7 +101,7 @@ data SemanticError
     | BinaryOpTypeMismatch Location (BinaryOp 'Unchecked) (Type 'Checked) (Type 'Checked)
     | PrintLnExprExcessHole Location
     | PrintLnExprExcessArg Location
-    | PrintLnExprTypeMismatch (Located (Type 'Checked))
+    | TypeNotPrintable (Located (Type 'Checked))
     deriving Show
 
 type Semantic = StateT Context (Except SemanticError)
@@ -327,12 +327,12 @@ semantic filePath s = first showError . checkModule
         MatchArmEnumVariantNotFound location n v -> errorBundlePretty (parseErrorBundle location message)
           where
             message = "Enum variant `" <> Text.unpack (n <> "::" <> v) <> "` not found."
-        MatchArmTypeMismatch location t1 t0 -> errorBundlePretty (parseErrorBundle location message)
+        MatchArmResultTypeMismatch location t1 t0 -> errorBundlePretty (parseErrorBundle location message)
           where
             message =
                 intercalate
                     "\n"
-                    [ "This block is of a different type than the first block of the enclosing `match`."
+                    [ "This block returns a value of a different type than the first block of the enclosing `match`."
                     , ""
                     , "Expected type:"
                     , ""
@@ -403,7 +403,7 @@ semantic filePath s = first showError . checkModule
         PrintLnExprExcessArg location -> errorBundlePretty (parseErrorBundle location message)
           where
             message = "No hole was given for this argument"
-        PrintLnExprTypeMismatch (Located location t) -> errorBundlePretty (parseErrorBundle location message)
+        TypeNotPrintable (Located location t) -> errorBundlePretty (parseErrorBundle location message)
           where
             message = "The type `" <> prettyType t <> "` is not printable."
 
@@ -635,7 +635,7 @@ exprWithBlock = \case
 
                         case otherResultTypes of
                             [] -> pure (CheckedMatchExpr e0' n0 sortedCheckedMatchArms, unpack expected)
-                            actual : _ -> throwError (MatchArmTypeMismatch (locate actual) (unpack actual) (unpack expected))
+                            actual : _ -> throwError (MatchArmResultTypeMismatch (locate actual) (unpack actual) (unpack expected))
                       where
                         sortedCheckedMatchArms = [checkedMatchArm | (_, (checkedMatchArm, _)) <- sortOn fst checkedMatchArms]
             _ -> throwError (MatchScrutineeTypeMismatch (locate e0) t0)
@@ -755,7 +755,7 @@ exprWithoutBlock = \case
             case unpack t of
                 I64 -> pure "%lld"
                 F64 -> pure "%f"
-                _ -> throwError (PrintLnExprTypeMismatch t)
+                _ -> throwError (TypeNotPrintable t)
 
 constDef
     :: ConstDecl 'Checked
