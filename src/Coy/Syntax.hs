@@ -94,8 +94,8 @@ data FnDecl (u :: Status) where
 
 fnDeclName :: FnDecl u -> Text
 fnDeclName = \case
-  UncheckedFnDecl n _ _ -> n
-  CheckedFnDecl n _ _ -> n
+    UncheckedFnDecl n _ _ -> n
+    CheckedFnDecl n _ _ -> n
 
 deriving instance Eq (FnDecl u)
 deriving instance Ord (FnDecl u)
@@ -158,8 +158,8 @@ deriving instance Show (Expr u)
 
 locateExpr :: Expr 'Unchecked -> Location
 locateExpr = \case
-  UncheckedExprWithBlock e -> locateExprWithBlock e
-  UncheckedExprWithoutBlock e -> locate e
+    UncheckedExprWithBlock e -> locateExprWithBlock e
+    UncheckedExprWithoutBlock e -> locate e
 
 data ExprWithBlock (u :: Status) where
     BlockExpr :: Block u -> ExprWithBlock u
@@ -411,26 +411,26 @@ data BinaryOp (u :: Status) where
 
 prettyBinaryOp :: BinaryOp u -> String
 prettyBinaryOp = \case
-  Mul -> "*"
-  FMul -> "*"
-  Div -> "/"
-  FDiv -> "/"
-  Rem -> "%"
-  FRem -> "%"
-  Add -> "+"
-  FAdd -> "+"
-  Sub -> "-"
-  FSub -> "-"
-  Shl -> "<<"
-  Shr -> ">>"
-  BitAnd -> "&"
-  BitXor -> "^"
-  BitOr -> "|"
-  Cmp p -> prettyPredicate p
-  Icmp p -> prettyPredicate p
-  Fcmp p -> prettyPredicate p
-  And -> "&&"
-  Or -> "||"
+    Mul -> "*"
+    FMul -> "*"
+    Div -> "/"
+    FDiv -> "/"
+    Rem -> "%"
+    FRem -> "%"
+    Add -> "+"
+    FAdd -> "+"
+    Sub -> "-"
+    FSub -> "-"
+    Shl -> "<<"
+    Shr -> ">>"
+    BitAnd -> "&"
+    BitXor -> "^"
+    BitOr -> "|"
+    Cmp p -> prettyPredicate p
+    Icmp p -> prettyPredicate p
+    Fcmp p -> prettyPredicate p
+    And -> "&&"
+    Or -> "||"
 
 deriving instance Eq (BinaryOp u)
 deriving instance Ord (BinaryOp u)
@@ -447,12 +447,12 @@ data Predicate
 
 prettyPredicate :: Predicate -> String
 prettyPredicate = \case
-  Eq -> "=="
-  Ne -> "!="
-  Lt -> "<"
-  Gt -> ">"
-  Le -> "<="
-  Ge -> ">="
+    Eq -> "=="
+    Ne -> "!="
+    Lt -> "<"
+    Gt -> ">"
+    Le -> "<="
+    Ge -> ">="
 
 data FormatString (u :: Status) where
     UncheckedFormatString :: [Located FormatStringChunk] -> FormatString 'Unchecked
