@@ -1,2 +1,2 @@
-v dot w equals 0.000000
-w dot w equals 4.000000
+dot_product(v, w) == 0.000000
+dot_product(w, w) == 4.000000
