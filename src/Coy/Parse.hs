@@ -225,22 +225,22 @@ exprWithoutBlock = makeExprParser term ops
     ops =
         [
             [
-                Prefix (fmap (UncheckedUnaryOpExpr . ($> Neg)) (located (symbolic '-')))
+                Prefix (fmap (UncheckedUnaryOpExpr . ($> Neg)) (located (symbol "-")))
             ],
             [
-                Prefix (fmap (UncheckedUnaryOpExpr . ($> Not)) (located (symbolic '!')))
+                Prefix (fmap (UncheckedUnaryOpExpr . ($> Not)) (located (symbol "!")))
             ],
             [
                 Postfix (fmap (UncheckedUnaryOpExpr . fmap As) (located (symbol "as" *> typeName)))
             ],
             [
-                InfixL (fmap (UncheckedBinaryOpExpr . ($> Mul)) (located (symbolic '*'))),
-                InfixL (fmap (UncheckedBinaryOpExpr . ($> Div)) (located (symbolic '/'))),
-                InfixL (fmap (UncheckedBinaryOpExpr . ($> Rem)) (located (symbolic '%')))
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> Mul)) (located (symbol "*"))),
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> Div)) (located (symbol "/"))),
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> Rem)) (located (symbol "%")))
             ],
             [
-                InfixL (fmap (UncheckedBinaryOpExpr . ($> Add)) (located (symbolic '+'))),
-                InfixL (fmap (UncheckedBinaryOpExpr . ($> Sub)) (located (symbolic '-')))
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> Add)) (located (symbol "+"))),
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> Sub)) (located (symbol "-")))
             ],
             [
                 InfixL (fmap (UncheckedBinaryOpExpr . ($> Shl)) (located (symbol "<<"))),
@@ -250,7 +250,7 @@ exprWithoutBlock = makeExprParser term ops
                 InfixL (fmap (UncheckedBinaryOpExpr . ($> BitAnd)) (located (Parser.try bitAnd)))
             ],
             [
-                InfixL (fmap (UncheckedBinaryOpExpr . ($> BitXor)) (located (symbolic '^')))
+                InfixL (fmap (UncheckedBinaryOpExpr . ($> BitXor)) (located (symbol "^")))
             ],
             [
                 InfixL (fmap (UncheckedBinaryOpExpr . ($> BitOr)) (located (Parser.try bitOr)))
@@ -260,8 +260,8 @@ exprWithoutBlock = makeExprParser term ops
                 InfixN (fmap (UncheckedBinaryOpExpr . ($> Cmp Ne)) (located (symbol "!="))),
                 InfixN (fmap (UncheckedBinaryOpExpr . ($> Cmp Le)) (located (symbol "<="))),
                 InfixN (fmap (UncheckedBinaryOpExpr . ($> Cmp Ge)) (located (symbol ">="))),
-                InfixN (fmap (UncheckedBinaryOpExpr . ($> Cmp Lt)) (located (symbolic '<'))),
-                InfixN (fmap (UncheckedBinaryOpExpr . ($> Cmp Gt)) (located (symbolic '>')))
+                InfixN (fmap (UncheckedBinaryOpExpr . ($> Cmp Lt)) (located (symbol "<"))),
+                InfixN (fmap (UncheckedBinaryOpExpr . ($> Cmp Gt)) (located (symbol ">")))
             ],
             [
                 InfixL (fmap (UncheckedBinaryOpExpr . ($> And)) (located (symbol "&&")))
@@ -351,9 +351,6 @@ space1 = do
 
 symbol :: Text -> Parser Text
 symbol s = Parser.string s <* space
-
-symbolic :: Char -> Parser Char
-symbolic c = Parser.char c <* space
 
 comma :: Parser ()
 comma = Parser.char ',' *> space
