@@ -463,7 +463,7 @@ deriving instance Eq (FormatString u)
 deriving instance Ord (FormatString u)
 deriving instance Show (FormatString u)
 
-data FormatStringChunk = Hole | NonHole Text
+data FormatStringChunk = NonHole Text | Hole
     deriving (Eq, Ord, Show)
 
 data ConstDef (u :: Status) where

@@ -215,14 +215,22 @@ exprWithoutBlock = makeExprParser term ops
             space
             pure (UncheckedFormatString cs)
 
-        formatStringChunk = hole <|> nonHole
+        formatStringChunk = nonHole <|> hole
 
-        hole = "{}" $> Hole
+        nonHole = NonHole <$> (escaped <|> text <|> leftBrace <|> rightBrace)
 
-        nonHole = NonHole <$>
-            Parser.takeWhile1P
-                (Just "non-hole character")
-                (\c -> isAscii c && isPrint c && c /= '"' && c /= '{')
+        escaped = ("\\\"" $> "\"") <|> ("\\n" $> "\n") <|> ("\\t" $> "\t") <|> ("\\\\" $> "\\") <|> ("\\0" $> "\0")
+
+        text = Text.replace "%" "%%" <$> Parser.takeWhile1P (Just "text character") isText
+
+        isText c = isAscii c && isPrint c && c /= '"' && c /= '\\' && c /= '{' && c /= '}'
+
+        leftBrace = "{{" $> "{"
+
+        rightBrace = "}}" $> "}"
+
+        -- Allow whitespace, but no actual format specification.
+        hole = ("{" *> space *> "}") $> Hole
 
     ops =
         [
