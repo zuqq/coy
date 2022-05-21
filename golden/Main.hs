@@ -3,7 +3,7 @@
 import Data.ByteString.Lazy (ByteString)
 import Data.Foldable (traverse_)
 import System.Directory (listDirectory, makeAbsolute)
-import System.FilePath ((<.>), (</>), replaceExtension, takeBaseName, takeExtension)
+import System.FilePath (replaceExtension, takeBaseName, takeExtension, (<.>), (</>))
 import System.IO.Temp (withTempDirectory)
 import System.Process.Typed (nullStream, proc, readProcess, runProcess_, setStderr, setStdout, setWorkingDir)
 import Test.Hspec (Spec, aroundAll, describe, it, parallel, runIO, shouldBe)

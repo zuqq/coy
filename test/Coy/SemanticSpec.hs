@@ -1,11 +1,11 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds      #-}
 
 module Coy.SemanticSpec (spec) where
 
 import Data.Foldable (traverse_)
 import System.Directory (listDirectory)
-import System.FilePath ((</>), takeBaseName, takeExtension)
+import System.FilePath (takeBaseName, takeExtension, (</>))
 import Test.Hspec (Expectation, Spec, describe, expectationFailure, it, runIO)
 
 import qualified Data.ByteString as ByteString
