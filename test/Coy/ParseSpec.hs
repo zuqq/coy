@@ -2,7 +2,7 @@
 
 module Coy.ParseSpec (spec) where
 
-import Data.Foldable (for_)
+import Data.Foldable (traverse_)
 import System.Directory (listDirectory)
 import System.FilePath ((</>), takeBaseName, takeExtension)
 import Test.Hspec (Expectation, Spec, describe, expectationFailure, it, runIO)
@@ -51,10 +51,9 @@ forDirectory :: FilePath -> (FilePath -> Expectation) -> Spec
 forDirectory directory check = do
     testCases <- runIO (getTestCases directory)
 
-    describe directory do
-        for_ testCases \testCase ->
-            it (testCaseName testCase) do
-                check (testCaseInputFile testCase)
+    describe directory (traverse_ runTestCase testCases)
+  where
+    runTestCase testCase = it (testCaseName testCase) (check (testCaseInputFile testCase))
 
 spec :: Spec
 spec = do
