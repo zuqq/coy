@@ -1,12 +1,12 @@
 {-# LANGUAGE BlockArguments #-}
 
 import Data.ByteString.Lazy (ByteString)
-import Data.Foldable (for_)
+import Data.Foldable (traverse_)
 import System.Directory (listDirectory, makeAbsolute)
 import System.FilePath ((<.>), (</>), replaceExtension, takeBaseName, takeExtension)
 import System.IO.Temp (withTempDirectory)
 import System.Process.Typed (nullStream, proc, readProcess, runProcess_, setStderr, setStdout, setWorkingDir)
-import Test.Hspec (Spec, aroundAll, describe, it, runIO, shouldBe)
+import Test.Hspec (Spec, aroundAll, describe, it, parallel, runIO, shouldBe)
 import Test.Hspec.Runner (defaultConfig, evaluateSummary, runSpec)
 
 import qualified Data.ByteString.Lazy as ByteString.Lazy
@@ -15,17 +15,24 @@ import Paths_coy (getBinDir)
 
 data TestCase = TestCase
     { testCaseName :: String
+    , testCaseCoyExe :: FilePath
     , testCaseInputFile :: FilePath
     , testCaseGoldenFile :: FilePath
     }
 
-getTestCases :: FilePath -> IO [TestCase]
-getTestCases inputDir = fmap (fmap getTestCase . filter isCoySourceFile) (listDirectory inputDir)
+getTestCases
+    :: FilePath
+    -- ^ Path to the `coy` executable.
+    -> FilePath
+    -- ^ Input directory.
+    -> IO [TestCase]
+getTestCases coyExe inputDir = fmap (fmap getTestCase . filter isCoySourceFile) (listDirectory inputDir)
   where
     isCoySourceFile = (== ".coy") . takeExtension
 
     getTestCase inputFileName = TestCase
         { testCaseName = takeBaseName inputFileName
+        , testCaseCoyExe = coyExe
         , testCaseInputFile = inputDir </> inputFileName
         , testCaseGoldenFile = inputDir </> replaceExtension inputFileName ".stdout"
         }
@@ -86,21 +93,22 @@ compileAndRunIn workingDir coy inputFile = do
 
 spec :: Spec
 spec = do
-    binDir <- runIO getBinDir
+    coyExe <- runIO (fmap (</> "coy-exe") getBinDir)
 
     inputDir <- runIO (makeAbsolute "./golden/data")
 
-    testCases <- runIO (getTestCases inputDir)
+    testCases <- runIO (getTestCases coyExe inputDir)
 
-    aroundAll (withTempDirectory inputDir mempty) do
-        describe "golden" do
-            for_ testCases \testCase ->
-                it (testCaseName testCase) \workingDir -> do
-                    actual <- compileAndRunIn workingDir (binDir </> "coy-exe") (testCaseInputFile testCase)
+    aroundAll (withTempDirectory inputDir mempty) $
+        describe "golden" (parallel (traverse_ runTestCase testCases))
+  where
+    runTestCase testCase =
+        it (testCaseName testCase) \workingDir -> do
+            actual <- compileAndRunIn workingDir (testCaseCoyExe testCase) (testCaseInputFile testCase)
 
-                    expected <- ByteString.Lazy.readFile (testCaseGoldenFile testCase)
+            expected <- ByteString.Lazy.readFile (testCaseGoldenFile testCase)
 
-                    actual `shouldBe` expected
+            actual `shouldBe` expected
 
 main :: IO ()
 main = do
