@@ -226,7 +226,9 @@ exprWithoutBlock = makeExprParser term ops
             <|> "\\\\" $> "\\"
             <|> "\\0" $> "\0"
 
-        text = Text.replace "%" "%%" <$> Parser.takeWhile1P (Just "text character") isText
+        text = escapePercentSign <$> Parser.takeWhile1P (Just "text character") isText
+
+        escapePercentSign = Text.replace "%" "%%"
 
         isText c = isAscii c && isPrint c && c /= '"' && c /= '\\' && c /= '{' && c /= '}'
 
