@@ -34,19 +34,20 @@ parseOptionsWithInfo =
         Options.Applicative.fullDesc
         <> Options.Applicative.header "Compile `.coy` files to LLVM IR."
   where
-    parseOptions = liftA2 Options parseInput (optional parseOutput)
+    parseOptions = liftA2 Options parseInputFilePathOption parseOutputFilePathOption
 
-    parseInput =
+    parseInputFilePathOption =
         Options.Applicative.strArgument $
             Options.Applicative.help "The input file."
             <> Options.Applicative.metavar "<input>"
 
-    parseOutput =
-        Options.Applicative.strOption $
-            Options.Applicative.long "output"
-            <> Options.Applicative.short 'o'
-            <> Options.Applicative.help "The output file."
-            <> Options.Applicative.metavar "<output>"
+    parseOutputFilePathOption =
+        optional $
+            Options.Applicative.strOption $
+                Options.Applicative.long "output"
+                <> Options.Applicative.short 'o'
+                <> Options.Applicative.help "The output file."
+                <> Options.Applicative.metavar "<output>"
 
 tryReadFile :: FilePath -> IO (Either IOException ByteString)
 tryReadFile = try . ByteString.IO.readFile
