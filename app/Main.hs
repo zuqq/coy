@@ -14,10 +14,7 @@ import System.IO (hPutStr, stderr)
 
 import qualified Data.ByteString as ByteString.IO (readFile, writeFile)
 import qualified Data.Text.Encoding as Text.Encoding
-import qualified Data.Text.IO as Text.IO
 import qualified Data.Text.Lazy as Text.Lazy
-import qualified Data.Text.Lazy.Encoding as Text.Lazy.Encoding
-import qualified Data.Text.Lazy.IO as Text.Lazy.IO
 import qualified LLVM.Pretty
 import qualified Options.Applicative
 
