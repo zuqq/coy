@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import Control.Applicative (liftA2, optional)
-import Control.Exception (IOException, throw, try)
+import Control.Exception (IOException, throwIO, try)
 import Data.ByteString (ByteString)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
@@ -62,7 +62,7 @@ readInputFile inputFilePath = do
         Left e -> do
             hPutStr stderr ("Failed to read input file " <> inputFilePath <> ":\n\n")
 
-            throw e
+            throwIO e
 
         Right rawInput -> pure rawInput
 
@@ -72,7 +72,7 @@ decodeRawInput inputFilePath rawInput =
         Left e -> do
             hPutStr stderr ("Failed to decode input file " <> inputFilePath <> " as UTF-8:\n\n")
 
-            throw e
+            throwIO e
         Right input -> pure input
 
 parseInput :: FilePath -> Text -> IO (Module 'Unchecked)
@@ -104,7 +104,7 @@ writeOutput outputFilePath output = do
         Left e -> do
             hPutStr stderr ("Failed to write output file " <> outputFilePath <> ":\n\n")
 
-            throw e
+            throwIO e
         Right () -> mempty
 
 main :: IO ()
