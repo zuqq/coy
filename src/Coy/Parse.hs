@@ -219,7 +219,12 @@ exprWithoutBlock = makeExprParser term ops
 
         nonHole = NonHole <$> (escaped <|> text <|> leftBrace <|> rightBrace)
 
-        escaped = ("\\\"" $> "\"") <|> ("\\n" $> "\n") <|> ("\\t" $> "\t") <|> ("\\\\" $> "\\") <|> ("\\0" $> "\0")
+        escaped =
+            "\\\"" $> "\""
+            <|> "\\n" $> "\n"
+            <|> "\\t" $> "\t"
+            <|> "\\\\" $> "\\"
+            <|> "\\0" $> "\0"
 
         text = Text.replace "%" "%%" <$> Parser.takeWhile1P (Just "text character") isText
 
