@@ -299,7 +299,7 @@ decimal = Text.Megaparsec.Char.Lexer.decimal
 lit :: Parser Lit
 lit = unitLit <|> boolLit <|> Parser.try f64Lit <|> i64Lit
   where
-    unitLit = UnitLit <$> (symbol "()" $> ())
+    unitLit = (Parser.char '(' *> space *> Parser.char ')' *> space) $> UnitLit ()
 
     boolLit = BoolLit <$> (true $> True <|> false $> False) <* space
       where
@@ -449,7 +449,7 @@ enumVariantName = upperIdentifier
 typeName :: Parser (Type 'Unchecked)
 typeName = unit <|> bool <|> i64 <|> f64 <|> structOrEnum
   where
-    unit = symbol "()" $> Unit
+    unit = (Parser.char '(' *> space *> Parser.char ')' *> space) $> Unit
 
     bool = symbol "bool" $> Bool
 
