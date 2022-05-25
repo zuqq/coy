@@ -60,7 +60,7 @@ type ModuleBuilder = LLVM.IRBuilder.ModuleBuilderT (State Context)
 type IRBuilder = LLVM.IRBuilder.IRBuilderT ModuleBuilder
 
 codegen :: String -> Module 'Checked -> LLVM.AST.Module
-codegen moduleName checked = evalState (LLVM.IRBuilder.buildModuleT moduleName' (builder checked)) context
+codegen moduleName checkedModule = evalState (LLVM.IRBuilder.buildModuleT moduleName' (builder checkedModule)) context
   where
     moduleName' = ByteString.Short.toShort (ByteString.Char8.pack moduleName)
 
