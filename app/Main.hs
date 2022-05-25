@@ -108,7 +108,9 @@ main = do
 
     let inputFilePath = inputFilePathOption options
 
-    let outputFilePath = fromMaybe (takeBaseName inputFilePath <.> "ll") (outputFilePathOption options)
+    let moduleName = takeBaseName inputFilePath
+
+    let outputFilePath = fromMaybe (moduleName <.> "ll") (outputFilePathOption options)
 
     rawInput <- readInputFile inputFilePath
 
@@ -118,7 +120,7 @@ main = do
 
     checkedModule <- checkInput inputFilePath input uncheckedModule
 
-    let code = codegen (takeBaseName inputFilePath) checkedModule
+    let code = codegen moduleName checkedModule
 
     let bytes = Text.Encoding.encodeUtf8 (Text.Lazy.toStrict (LLVM.Pretty.ppllvm code))
 
