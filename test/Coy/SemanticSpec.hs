@@ -30,8 +30,8 @@ getTestCases inputDir = fmap (fmap getTestCase . filter isCoySourceFile) (listDi
         , testCaseInputFile = inputDir </> inputFileName
         }
 
-parseAndAnalyze :: FilePath -> IO (Either String (Module 'Checked))
-parseAndAnalyze filePath = do
+parseAndSemantic :: FilePath -> IO (Either String (Module 'Checked))
+parseAndSemantic filePath = do
     rawInput <- ByteString.readFile filePath
     case Text.Encoding.decodeUtf8' rawInput of
         Left e -> error ("Failed to decode:\n\n" <> show e)
@@ -42,14 +42,14 @@ parseAndAnalyze filePath = do
 
 shouldPass :: FilePath -> Expectation
 shouldPass filePath = do
-    result <- parseAndAnalyze filePath
+    result <- parseAndSemantic filePath
     case result of
         Left e -> expectationFailure ("Expected success, got:\n\n" <> e)
         Right _ -> mempty
 
 shouldNotPass :: FilePath -> Expectation
 shouldNotPass filePath = do
-    result <- parseAndAnalyze filePath
+    result <- parseAndSemantic filePath
     case result of
         Left _ -> mempty
         Right m -> expectationFailure ("Expected failure, got:\n\n" <> show m)
