@@ -30,13 +30,13 @@ data ModuleItem
 
 parse :: FilePath -> Text -> Either String (Module 'Unchecked)
 parse filePath input = do
-    items <- first errorBundlePretty (Parser.parse parseModule filePath input)
+    moduleItems <- first errorBundlePretty (Parser.parse parseModule filePath input)
 
-    let typeDefs = [d | TypeDefItem d <- items]
+    let typeDefs = [d | TypeDefItem d <- moduleItems]
 
-    let constDefs = [d | ConstDefItem d <- items]
+    let constDefs = [d | ConstDefItem d <- moduleItems]
 
-    let fnDefs = [d | FnDefItem d <- items]
+    let fnDefs = [d | FnDefItem d <- moduleItems]
 
     pure (UncheckedModule typeDefs constDefs fnDefs)
   where
