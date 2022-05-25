@@ -41,12 +41,11 @@ parseOptionsWithInfo =
             <> Options.Applicative.metavar "<input>"
 
     parseOutputFilePathOption =
-        optional $
-            Options.Applicative.strOption $
-                Options.Applicative.long "output"
-                <> Options.Applicative.short 'o'
-                <> Options.Applicative.help "The output file."
-                <> Options.Applicative.metavar "<output>"
+        optional . Options.Applicative.strOption $
+            Options.Applicative.help "The output file."
+            <> Options.Applicative.long "output"
+            <> Options.Applicative.metavar "<output>"
+            <> Options.Applicative.short 'o'
 
 tryReadFile :: FilePath -> IO (Either IOException ByteString)
 tryReadFile = try . ByteString.IO.readFile
@@ -57,19 +56,18 @@ readInputFile inputFilePath = do
 
     case result of
         Left e -> do
-            hPutStr stderr ("Failed to read input file " <> inputFilePath <> ":\n\n")
+            hPutStr stderr ("Failed to read input file " <> inputFilePath <> ":\n\n" <> show e)
 
-            throwIO e
-
+            exitFailure
         Right rawInput -> pure rawInput
 
 decodeRawInput :: FilePath -> ByteString -> IO Text
 decodeRawInput inputFilePath rawInput =
     case Text.Encoding.decodeUtf8' rawInput of
         Left e -> do
-            hPutStr stderr ("Failed to decode input file " <> inputFilePath <> " as UTF-8:\n\n")
+            hPutStr stderr ("Failed to decode input file " <> inputFilePath <> " as UTF-8:\n\n" <> show e)
 
-            throwIO e
+            exitFailure
         Right input -> pure input
 
 parseInput :: FilePath -> Text -> IO (Module 'Unchecked)
@@ -99,9 +97,9 @@ writeOutput outputFilePath output = do
 
     case result of
         Left e -> do
-            hPutStr stderr ("Failed to write output file " <> outputFilePath <> ":\n\n")
+            hPutStr stderr ("Failed to write output file " <> outputFilePath <> ":\n\n" <> show e)
 
-            throwIO e
+            exitFailure
         Right () -> mempty
 
 main :: IO ()
@@ -116,11 +114,11 @@ main = do
 
     input <- decodeRawInput inputFilePath rawInput
 
-    unchecked <- parseInput inputFilePath input
+    uncheckedModule <- parseInput inputFilePath input
 
-    checked <- checkInput inputFilePath input unchecked
+    checkedModule <- checkInput inputFilePath input uncheckedModule
 
-    let code = codegen (takeBaseName inputFilePath) checked
+    let code = codegen (takeBaseName inputFilePath) checkedModule
 
     let bytes = Text.Encoding.encodeUtf8 (Text.Lazy.toStrict (LLVM.Pretty.ppllvm code))
 
