@@ -170,10 +170,10 @@ intrinsicFns =
     ]
 
 semantic :: String -> Text -> Module 'Unchecked -> Either String (Module 'Checked)
-semantic filePath s = first showError . checkModule
+semantic filePath input = first showError . checkModule
   where
     initialPosState = PosState
-        { pstateInput = s
+        { pstateInput = input
         , pstateOffset = 0
         , pstateSourcePos = initialPos filePath
         , pstateTabWidth = defaultTabWidth
