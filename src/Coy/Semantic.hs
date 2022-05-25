@@ -453,7 +453,7 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
             }
 
     -- Check all constant definitions.
-    constDefs' <- evalSemantic (zipWithM constDef constDecls' constInits) context
+    constDefs' <- evalSemantic (zipWithM checkConstDef constDecls' constInits) context
 
     -- Check all function definitions.
     (fnDefs', context') <- runSemantic (zipWithM checkFnDef fnDecls' fnBodies) context
@@ -544,22 +544,22 @@ checkFnDef :: FnDecl 'Checked -> Block 'Unchecked -> Semantic (FnDef 'Checked)
 checkFnDef d@(CheckedFnDecl _ as returnType) b = do
     (b', resultType) <- namespaced do
         traverse_ bindFnArg as
-        block b
+        checkBlock b
     when (resultType /= returnType) (throwError (FnDefTypeMismatch (locateBlock b) resultType returnType))
     pure (FnDef d b')
   where
     bindFnArg (FnArg an at) = bindValue an at
 
-block :: Block 'Unchecked -> Semantic (Block 'Checked, Type 'Checked)
-block (UncheckedBlock ss e) = do
-    ss' <- traverse (statement . unpack) ss
-    (e', t) <- expr (unpack e)
+checkBlock :: Block 'Unchecked -> Semantic (Block 'Checked, Type 'Checked)
+checkBlock (UncheckedBlock ss e) = do
+    ss' <- traverse (checkStatement . unpack) ss
+    (e', t) <- checkExpr (unpack e)
     pure (CheckedBlock ss' e', t)
 
-statement :: Statement 'Unchecked -> Semantic (Statement 'Checked)
-statement = \case
+checkStatement :: Statement 'Unchecked -> Semantic (Statement 'Checked)
+checkStatement = \case
     UncheckedLetStatement (VarPattern x) e -> do
-        (e', t) <- expr e
+        (e', t) <- checkExpr e
         bindValue x t
         pure (CheckedLetStatement (VarPattern x) e')
     UncheckedLetStatement (UncheckedStructPattern n xs) e -> do
@@ -567,35 +567,35 @@ statement = \case
         let actualArity = Vector.length (unpack xs)
         let expectedArity = Vector.length fieldTypes
         when (actualArity /= expectedArity) (throwError (StructPatternArityMismatch (locate xs) actualArity expectedArity))
-        (e', actualType) <- expr e
+        (e', actualType) <- checkExpr e
         let expectedType = Struct (unpack n)
         when (actualType /= expectedType) (throwError (StructPatternTypeMismatch (locateExpr e) actualType expectedType))
         let xts = Vector.zip (unpack xs) fieldTypes
         traverse_ (uncurry bindValue) xts
         pure (CheckedLetStatement (CheckedStructPattern xts) e')
     UncheckedExprStatement e -> do
-        (e', _) <- expr e
+        (e', _) <- checkExpr e
         pure (CheckedExprStatement e')
 
-expr :: Expr 'Unchecked -> Semantic (Expr 'Checked, Type 'Checked)
-expr = \case
-    UncheckedExprWithBlock e -> fmap (first CheckedExprWithBlock) (exprWithBlock e)
-    UncheckedExprWithoutBlock e -> fmap (first CheckedExprWithoutBlock) (exprWithoutBlock (unpack e))
+checkExpr :: Expr 'Unchecked -> Semantic (Expr 'Checked, Type 'Checked)
+checkExpr = \case
+    UncheckedExprWithBlock e -> fmap (first CheckedExprWithBlock) (checkExprWithBlock e)
+    UncheckedExprWithoutBlock e -> fmap (first CheckedExprWithoutBlock) (checkExprWithoutBlock (unpack e))
 
-exprWithBlock
+checkExprWithBlock
     :: ExprWithBlock 'Unchecked
     -> Semantic (ExprWithBlock 'Checked, Type 'Checked)
-exprWithBlock = \case
-    BlockExpr b -> fmap (first BlockExpr) (block b)
+checkExprWithBlock = \case
+    BlockExpr b -> fmap (first BlockExpr) (checkBlock b)
     UncheckedIfExpr e b0 b1 -> do
-        (e', t) <- exprWithoutBlock (unpack e)
+        (e', t) <- checkExprWithoutBlock (unpack e)
         when (t /= Bool) (throwError (IfScrutineeTypeMismatch (locate e) t))
-        (b0', t0) <- block b0
-        (b1', t1) <- block b1
+        (b0', t0) <- checkBlock b0
+        (b1', t1) <- checkBlock b1
         when (t1 /= t0) (throwError (IfBlocksTypeMismatch (locateBlock b1) t1 t0))
         pure (CheckedIfExpr e' b0' b1', t0)
     UncheckedMatchExpr _ e0 uncheckedMatchArms -> do
-        (e0', t0) <- exprWithoutBlock (unpack e0)
+        (e0', t0) <- checkExprWithoutBlock (unpack e0)
         case t0 of
             Enum n0 -> do
                 -- Look up the enum variants using the unsafe `Map.!` operator;
@@ -613,7 +613,7 @@ exprWithBlock = \case
                             namespaced do
                                 let xts = Vector.zip (unpack xs) fieldTypes
                                 traverse_ (uncurry bindValue) xts
-                                (e', resultType) <- expr e
+                                (e', resultType) <- checkExpr e
                                 pure (i, (CheckedMatchArm xts e', Located (locateExpr e) resultType))
 
                 let coverageByIndex = histogram [i | (i, _) <- checkedMatchArms]
@@ -648,10 +648,10 @@ exprWithBlock = \case
     occurrences :: Ord a => a -> Map a Int -> Int
     occurrences = Map.findWithDefault 0
 
-exprWithoutBlock
+checkExprWithoutBlock
     :: ExprWithoutBlock 'Unchecked
     -> Semantic (ExprWithoutBlock 'Checked, Type 'Checked)
-exprWithoutBlock = \case
+checkExprWithoutBlock = \case
     LitExpr l -> pure (LitExpr l, litType l)
     UncheckedVarExpr x -> do
         t <- findValue x
@@ -660,7 +660,7 @@ exprWithoutBlock = \case
         t <- findConst x
         pure (CheckedConstExpr (unpack x) t, t)
     UncheckedUnaryOpExpr o e -> do
-        (e', t) <- exprWithoutBlock e
+        (e', t) <- checkExprWithoutBlock e
         case (unpack o, t) of
             (Neg, I64) -> pure (CheckedUnaryOpExpr Neg e', I64)
             (Neg, F64) -> pure (CheckedUnaryOpExpr FNeg e', F64)
@@ -669,8 +669,8 @@ exprWithoutBlock = \case
             (As I64, F64) -> pure (CheckedUnaryOpExpr AsI64 e', I64)
             _ -> throwError (UnaryOpTypeMismatch (locate o) (unpack o) t)
     UncheckedBinaryOpExpr o e0 e1 -> do
-        (e0', t0) <- exprWithoutBlock e0
-        (e1', t1) <- exprWithoutBlock e1
+        (e0', t0) <- checkExprWithoutBlock e0
+        (e1', t1) <- checkExprWithoutBlock e1
         case (unpack o, t0, t1) of
             (Mul, I64, I64) -> pure (CheckedBinaryOpExpr Mul e0' e1', I64)
             (Mul, F64, F64) -> pure (CheckedBinaryOpExpr FMul e0' e1', F64)
@@ -693,25 +693,25 @@ exprWithoutBlock = \case
             (Or, Bool, Bool) -> pure (CheckedBinaryOpExpr Or e0' e1', Bool)
             _ -> throwError (BinaryOpTypeMismatch (locate o) (unpack o) t0 t1)
     UncheckedCallExpr n es -> do
-        ets' <- traverse exprWithoutBlock (unpack es)
+        ets' <- traverse checkExprWithoutBlock (unpack es)
         let ts = fmap snd ets'
         (argumentTypes, returnType) <- findFn n
         when (ts /= argumentTypes) (throwError (ArgumentTypesMismatch (locate es) ts argumentTypes))
         pure (CheckedCallExpr (unpack n) (fmap fst ets') returnType, returnType)
     UncheckedStructExpr n es -> do
-        ets' <- traverse exprWithoutBlock (unpack es)
+        ets' <- traverse checkExprWithoutBlock (unpack es)
         let ts = fmap snd ets'
         fieldTypes <- findStruct n
         when (ts /= fieldTypes) (throwError (ArgumentTypesMismatch (locate es) ts fieldTypes))
         pure (CheckedStructExpr (unpack n) ets', Struct (unpack n))
     UncheckedEnumExpr n v es -> do
-        ets' <- traverse exprWithoutBlock (unpack es)
+        ets' <- traverse checkExprWithoutBlock (unpack es)
         let ts = fmap snd ets'
         (i, fieldTypes) <- findEnumVariant n v
         when (ts /= fieldTypes) (throwError (ArgumentTypesMismatch (locate es) ts fieldTypes))
         pure (CheckedEnumExpr (unpack n) i ets', Enum (unpack n))
     UncheckedPrintLnExpr (UncheckedFormatString cs) es -> do
-        ets' <- traverse (traverse exprWithoutBlock) es
+        ets' <- traverse (traverse checkExprWithoutBlock) es
 
         let ts = fmap (fmap snd) ets'
 
@@ -757,19 +757,19 @@ exprWithoutBlock = \case
                 F64 -> pure "%f"
                 _ -> throwError (TypeNotPrintable t)
 
-constDef
+checkConstDef
     :: ConstDecl 'Checked
     -> Located (ConstInit 'Unchecked)
     -> Semantic (ConstDef 'Checked)
-constDef d@(ConstDecl _ constDeclType) c = do
-    (c', t) <- constInit (unpack c)
+checkConstDef d@(ConstDecl _ constDeclType) c = do
+    (c', t) <- checkConstInit (unpack c)
     when (t /= constDeclType) (throwError (ConstDefTypeMismatch (locate c) t constDeclType))
     pure (CheckedConstDef d c')
 
-constInit
+checkConstInit
     :: ConstInit 'Unchecked
     -> Semantic (ConstInit 'Checked, Type 'Checked)
-constInit = \case
+checkConstInit = \case
     LitInit l -> pure (LitInit l, litType l)
     UncheckedNegLitInit l ->
         case unpack l of
@@ -778,13 +778,13 @@ constInit = \case
             _ -> throwError (NegLitInitTypeMismatch (fmap litType l))
     UncheckedStructInit n cs -> do
         fieldTypes <- findStruct n
-        cts' <- traverse constInit (unpack cs)
+        cts' <- traverse checkConstInit (unpack cs)
         let ts = fmap snd cts'
         when (ts /= fieldTypes) (throwError (ArgumentTypesMismatch (locate cs) ts fieldTypes))
         pure (CheckedStructInit (unpack n) (fmap fst cts'), Struct (unpack n))
     UncheckedEnumInit n v cs -> do
         (i, fieldTypes) <- findEnumVariant n v
-        cts' <- traverse constInit (unpack cs)
+        cts' <- traverse checkConstInit (unpack cs)
         let ts = fmap snd cts'
         when (ts /= fieldTypes) (throwError (ArgumentTypesMismatch (locate cs) ts fieldTypes))
         pure (CheckedEnumInit (unpack n) i (fmap fst cts'), Enum (unpack n))
