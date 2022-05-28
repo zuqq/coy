@@ -11,8 +11,7 @@ import Data.Char (isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isDigit, isPr
 import Data.Functor (void, ($>))
 import Data.Text (Text)
 import Data.Void (Void)
-import Text.Megaparsec (Parsec)
-import Text.Megaparsec.Error (errorBundlePretty)
+import Text.Megaparsec (Parsec, errorBundlePretty)
 
 import qualified Data.Text as Text
 import qualified Data.Vector as Vector
