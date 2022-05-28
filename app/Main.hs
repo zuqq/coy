@@ -77,16 +77,16 @@ parseInput inputFilePath input =
             hPutStr stderr e
 
             exitFailure
-        Right unchecked -> pure unchecked
+        Right uncheckedModule -> pure uncheckedModule
 
 checkInput :: FilePath -> Text -> Module 'Unchecked -> IO (Module 'Checked)
-checkInput inputFilePath input unchecked =
-    case semantic inputFilePath input unchecked of
+checkInput inputFilePath input uncheckedModule =
+    case semantic inputFilePath input uncheckedModule of
         Left e -> do
             hPutStr stderr e
 
             exitFailure
-        Right checked -> pure checked
+        Right checkedModule -> pure checkedModule
 
 tryWriteFile :: FilePath -> ByteString -> IO (Either IOException ())
 tryWriteFile outputFilePath = try . ByteString.IO.writeFile outputFilePath
