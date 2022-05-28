@@ -39,7 +39,7 @@ parse filePath input = do
 
     pure (UncheckedModule typeDefs constDefs fnDefs)
   where
-    parseModule = many parseModuleItem
+    parseModule = many parseModuleItem <* Parser.eof
 
     parseModuleItem =
         TypeDefItem <$> located typeDef
