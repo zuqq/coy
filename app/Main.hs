@@ -11,7 +11,7 @@ import System.Exit (exitFailure)
 import System.FilePath (takeBaseName, (<.>))
 import System.IO (hPutStr, stderr)
 
-import qualified Data.ByteString as ByteString.IO (readFile, writeFile)
+import qualified Data.ByteString as ByteString.IO (putStr, readFile, writeFile)
 import qualified Data.Text.Encoding as Text.Encoding
 import qualified Data.Text.Lazy as Text.Lazy
 import qualified LLVM.Pretty
@@ -89,7 +89,12 @@ checkInput inputFilePath input uncheckedModule =
         Right checkedModule -> pure checkedModule
 
 tryWriteFile :: FilePath -> ByteString -> IO (Either IOException ())
-tryWriteFile outputFilePath = try . ByteString.IO.writeFile outputFilePath
+tryWriteFile outputFilePath = try . write
+  where
+    write =
+        case outputFilePath of
+            "-" -> ByteString.IO.putStr
+            _ -> ByteString.IO.writeFile outputFilePath
 
 writeOutput :: FilePath -> ByteString -> IO ()
 writeOutput outputFilePath output = do
