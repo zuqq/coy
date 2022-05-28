@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+
 {-# OPTIONS_GHC -Wno-incomplete-record-updates #-}
 
 module LLVM.IRBuilder.Extended
