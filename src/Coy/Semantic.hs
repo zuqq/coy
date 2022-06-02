@@ -472,9 +472,9 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
             when (returnType /= Unit) (throwError (MainFnDefReturnTypeMismatch returnTypeLocation returnType))
             pure (CheckedModule typeDefs' constDefs' internPool otherFnDefs' mainFnDef')
           where
-            UncheckedFnDecl _ (Located arityLocation _) (Located returnTypeLocation _) = fnDeclsByName Map.! "main"
-
             arity = Vector.length as'
+
+            UncheckedFnDecl _ (Located arityLocation _) (Located returnTypeLocation _) = fnDeclsByName Map.! "main"
         _ -> error ("Internal error: expected at most one main function, got `" <> show mainFnDefs' <> "`.")
   where
     sortAndGroupBy key = groupBy ((==) `on` key) . sortOn key
@@ -630,14 +630,15 @@ checkExprWithBlock = \case
 
                 case checkedMatchArms of
                     [] -> pure (CheckedMatchExpr e0' n0 [], Unit)
-                    (_, (_, expected)) : _ -> do
-                        let otherResultTypes = [actual | (_, (_, actual)) <- checkedMatchArms, unpack actual /= unpack expected]
-
-                        case otherResultTypes of
-                            [] -> pure (CheckedMatchExpr e0' n0 sortedCheckedMatchArms, unpack expected)
-                            actual : _ -> throwError (MatchArmResultTypeMismatch (locate actual) (unpack actual) (unpack expected))
+                    (_, (_, Located _ expected)) : _
+                        | Located location actual : _ <- otherResultTypes -> throwError (MatchArmResultTypeMismatch location actual expected)
+                        | otherwise -> pure (CheckedMatchExpr e0' n0 sortedCheckedMatchArms, expected)
                       where
-                        sortedCheckedMatchArms = [checkedMatchArm | (_, (checkedMatchArm, _)) <- sortOn fst checkedMatchArms]
+                        resultTypes = fmap (snd . snd) checkedMatchArms
+
+                        otherResultTypes = filter ((/= expected) . unpack) resultTypes
+
+                        sortedCheckedMatchArms = fmap (fst . snd) (sortOn fst checkedMatchArms)
             _ -> throwError (MatchScrutineeTypeMismatch (locate e0) t0)
   where
     -- This type signature ties down the type of @1@.
