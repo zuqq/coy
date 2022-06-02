@@ -11,7 +11,7 @@ import Data.Char (isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isDigit, isPr
 import Data.Functor (void, ($>))
 import Data.Text (Text)
 import Data.Void (Void)
-import Text.Megaparsec (Parsec, errorBundlePretty)
+import Text.Megaparsec (Parsec, errorBundlePretty, (<?>))
 
 import qualified Data.Text as Text
 import qualified Data.Vector as Vector
@@ -358,12 +358,12 @@ comment = do
     Parser.space
 
 space :: Parser ()
-space = Parser.space *> Parser.skipMany comment
+space = Parser.hidden Parser.space *> Parser.hidden (Parser.skipMany comment)
 
 space1 :: Parser ()
 space1 = do
-    Parser.space1 <|> comment
-    Parser.skipMany comment
+    (Parser.space1 <?> "whitespace") <|> Parser.hidden comment
+    Parser.hidden (Parser.skipMany comment)
 
 symbol :: Text -> Parser Text
 symbol s = Parser.string s <* space
