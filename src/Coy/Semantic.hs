@@ -478,8 +478,6 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
     -- Check that there is exactly one main function, of the right signature.
     let (otherFnDefs', mainFnDefs') = partition ((/= "main") . fnDefName) fnDefs'
 
-    let fnDeclsByName = Map.fromList [(fnDeclName d, d) | d <- fnDecls]
-
     case mainFnDefs' of
         [] -> throwError MainFnDefMissing
         [mainFnDef'@(FnDef (CheckedFnDecl _ as' returnType) _)] -> do
@@ -488,6 +486,8 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
             pure (CheckedModule typeDefs' constDefs' internPool otherFnDefs' mainFnDef')
           where
             arity = Vector.length as'
+
+            fnDeclsByName = Map.fromList [(fnDeclName d, d) | d <- fnDecls]
 
             UncheckedFnDecl _ (Located arityLocation _) (Located returnTypeLocation _) = fnDeclsByName Map.! "main"
         _ -> error ("Internal error: expected at most one main function, got `" <> show mainFnDefs' <> "`.")
