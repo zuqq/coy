@@ -246,7 +246,7 @@ computeEnumSizes typeDefs = enumSizes
   where
     structSizes = Map.fromList [(n, structSize ts) | StructDef n ts <- typeDefs]
 
-    enumSizes = Map.fromList [(n, enumSize vs) | EnumDef n vs <- typeDefs]
+    enumSizes = Map.fromList [(n, enumSize vs) | CheckedEnumDef n vs <- typeDefs]
 
     structSize = totalSize 0
 
@@ -274,7 +274,7 @@ builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBl
     -- Define structs and enums.
     for_ typeDefs \case
         StructDef n0 ts -> structDef n0 ts
-        EnumDef n0 vs -> enumDef n0 vs
+        CheckedEnumDef n0 vs -> enumDef n0 vs
 
     -- Define constants.
     traverse_ constDef constDefs

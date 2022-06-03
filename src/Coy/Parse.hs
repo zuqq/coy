@@ -66,13 +66,13 @@ typeDef = structDef <|> enumDef
 
     enumDef = do
         "enum" *> space1
-        n <- enumName
-        vs <- withinBraces (commaSeparated enumVariant)
-        pure (EnumDef n vs)
+        n <- parseEnumName
+        vs <- withinBraces (commaSeparated (located enumVariant))
+        pure (UncheckedEnumDef n vs)
 
 enumVariant :: Parser (EnumVariant 'Unchecked)
 enumVariant = do
-    v <- enumVariantName
+    v <- parseEnumVariantName
     ts <- parenthesized (commaSeparated typeName)
     pure (EnumVariant v (Vector.fromList ts))
 
@@ -154,9 +154,9 @@ exprWithBlock = blockExpr <|> ifExpr <|> matchExpr
 
 matchArm :: Parser (MatchArm 'Unchecked)
 matchArm = do
-    n <- located enumName
+    n <- located parseEnumName
     void "::"
-    v <- located enumVariantName
+    v <- located parseEnumVariantName
     xs <- located (parenthesized (commaSeparated valueName))
     "=>" *> space
     e <- expr
@@ -187,9 +187,9 @@ exprWithoutBlock = makeExprParser term ops
     constExpr = UncheckedConstExpr <$> located constName
 
     enumExpr = do
-        n <- located enumName
+        n <- located parseEnumName
         void "::"
-        v <- located enumVariantName
+        v <- located parseEnumVariantName
         es <- located (parenthesized (commaSeparated exprWithoutBlock))
         pure (UncheckedEnumExpr n v (Vector.fromList <$> es))
 
@@ -342,9 +342,9 @@ constDef = do
         pure (UncheckedStructInit n (Vector.fromList <$> cs))
 
     enumInit = do
-        n <- located enumName
+        n <- located parseEnumName
         void "::"
-        v <- located enumVariantName
+        v <- located parseEnumVariantName
         cs <- located (parenthesized (commaSeparated constInit))
         pure (UncheckedEnumInit n v (Vector.fromList <$> cs))
 
@@ -439,11 +439,11 @@ valueName = lowerIdentifier
 structName :: Parser Text
 structName = upperIdentifier
 
-enumName :: Parser Text
-enumName = upperIdentifier
+parseEnumName :: Parser Text
+parseEnumName = upperIdentifier
 
-enumVariantName :: Parser Text
-enumVariantName = upperIdentifier
+parseEnumVariantName :: Parser Text
+parseEnumVariantName = upperIdentifier
 
 typeName :: Parser (Type 'Unchecked)
 typeName = unit <|> bool <|> i64 <|> f64 <|> structOrEnum

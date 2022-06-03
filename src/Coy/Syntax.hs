@@ -43,15 +43,22 @@ data Module (u :: Status) where
 
 deriving instance Show (Module u)
 
-data TypeDef (u :: Status)
-    = StructDef Text (Vector (Type u))
-    | EnumDef Text [EnumVariant u]
-    deriving (Eq, Ord, Show)
+data TypeDef (u :: Status) where
+    StructDef :: Text -> Vector (Type u) -> TypeDef u
+
+    UncheckedEnumDef :: Text -> [Located (EnumVariant 'Unchecked)] -> TypeDef 'Unchecked
+
+    CheckedEnumDef :: Text -> [EnumVariant 'Checked] -> TypeDef 'Checked
+
+deriving instance Eq (TypeDef u)
+deriving instance Ord (TypeDef u)
+deriving instance Show (TypeDef u)
 
 typeDefName :: TypeDef u -> Text
 typeDefName = \case
     StructDef n _ -> n
-    EnumDef n _ -> n
+    UncheckedEnumDef n _ -> n
+    CheckedEnumDef n _ -> n
 
 data Type (u :: Status) where
     Unit :: Type u
@@ -80,6 +87,9 @@ deriving instance Show (Type u)
 
 data EnumVariant (u :: Status) = EnumVariant Text (Vector (Type u))
     deriving (Eq, Ord, Show)
+
+enumVariantName :: EnumVariant u -> Text
+enumVariantName (EnumVariant n _) = n
 
 data FnDef (u :: Status) = FnDef (FnDecl u) (Block u)
     deriving (Eq, Ord, Show)

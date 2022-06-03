@@ -73,6 +73,7 @@ data SemanticError
     = RedefinedType (Located (TypeDef 'Unchecked))
     | RedefinedConst (Located (ConstDef 'Unchecked))
     | RedefinedFn (Located (FnDef 'Unchecked))
+    | RedefinedEnumVariant Location Text Text
     | StructOrEnumNotFound (Located Text)
     | TypeCycle (NonEmpty (TypeDef 'Unchecked))
     | StructNotFound (Located Text)
@@ -203,6 +204,9 @@ semantic filePath input = first showError . checkModule
         RedefinedFn (Located location d) -> errorBundlePretty (parseErrorBundle location message)
           where
             message = "A function named `" <> Text.unpack (fnDefName d) <> "` was already defined earlier in this file."
+        RedefinedEnumVariant location n v -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "An enum variant named `" <> Text.unpack (n <> "::" <> v) <> "` was already defined earlier in this file."
         StructOrEnumNotFound (Located location n) -> errorBundlePretty (parseErrorBundle location message)
           where
             message = "Type `" <> Text.unpack n <> "` not found."
@@ -456,7 +460,7 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
 
     let context = Context
             { _structs = Map.fromList [(n, ts) | StructDef n ts <- typeDefs']
-            , _enums = Map.fromList [(n, enumVariants vs) | EnumDef n vs <- typeDefs']
+            , _enums = Map.fromList [(n, enumVariants vs) | CheckedEnumDef n vs <- typeDefs']
             , _consts = Map.fromList [(n, t) | ConstDecl n t <- constDecls']
             , _strings = mempty
             , _fns = Map.fromList (intrinsicFns <> [(n, (fmap fnArgType as, t)) | CheckedFnDecl n as t <- fnDecls'])
@@ -492,7 +496,7 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
 
     structNames = Set.fromList [n | StructDef n _ <- fmap unpack typeDefs]
 
-    enumNames = Set.fromList [n | EnumDef n _ <- fmap unpack typeDefs]
+    enumNames = Set.fromList [n | UncheckedEnumDef n _ <- fmap unpack typeDefs]
 
     resolveType = \case
         Unit -> pure Unit
@@ -513,9 +517,12 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
         StructDef n ts -> do
             ts' <- traverse resolveType ts
             pure (StructDef n ts')
-        EnumDef n vs -> do
-            vs' <- traverse resolveEnumVariant vs
-            pure (EnumDef n vs')
+        UncheckedEnumDef n vs -> do
+            vs' <- traverse (resolveEnumVariant . unpack) vs
+            for_ (sortAndGroupBy (enumVariantName . unpack) vs) \case
+                _ : v : _ -> throwError (RedefinedEnumVariant (locate v) n (enumVariantName (unpack v)))
+                _ -> pure ()
+            pure (CheckedEnumDef n vs')
       where
         resolveEnumVariant (EnumVariant v ts) = do
             ts' <- traverse resolveType ts
@@ -547,7 +554,7 @@ sortTypeDefs typeDefs = bimap (fmap fromLabel) (fmap fromLabel) (topSort graph)
 
     neighbors = \case
         StructDef _ ts -> [toLabel (unpack n) | StructOrEnum n <- toList ts]
-        EnumDef _ vs -> [toLabel (unpack n) | EnumVariant _ ts <- vs, StructOrEnum n <- toList ts]
+        UncheckedEnumDef _ vs -> [toLabel (unpack n) | EnumVariant _ ts <- fmap unpack vs, StructOrEnum n <- toList ts]
 
     graph = stars [(toLabel (typeDefName d), neighbors d) | d <- typeDefs]
 
