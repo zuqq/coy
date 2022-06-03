@@ -471,12 +471,20 @@ data ConstDef (u :: Status) where
 
     CheckedConstDef :: ConstDecl 'Checked -> ConstInit 'Checked -> ConstDef 'Checked
 
+constDefName :: ConstDef u -> Text
+constDefName = \case
+    UncheckedConstDef d _ -> constDeclName d
+    CheckedConstDef d _ -> constDeclName d
+
 deriving instance Eq (ConstDef u)
 deriving instance Ord (ConstDef u)
 deriving instance Show (ConstDef u)
 
 data ConstDecl (u :: Status) = ConstDecl Text (Type u)
     deriving (Eq, Ord, Show)
+
+constDeclName :: ConstDecl u -> Text
+constDeclName (ConstDecl n _) = n
 
 data ConstInit (u :: Status) where
     LitInit :: Lit -> ConstInit u

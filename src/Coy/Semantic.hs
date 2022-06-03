@@ -71,6 +71,7 @@ values = lens _values \c vs -> c {_values = vs}
 
 data SemanticError
     = RedefinedType (Located (TypeDef 'Unchecked))
+    | RedefinedConst (Located (ConstDef 'Unchecked))
     | RedefinedFn (Located (FnDef 'Unchecked))
     | StructOrEnumNotFound (Located Text)
     | TypeCycle (NonEmpty (TypeDef 'Unchecked))
@@ -196,6 +197,9 @@ semantic filePath input = first showError . checkModule
         RedefinedType (Located location d) -> errorBundlePretty (parseErrorBundle location message)
           where
             message = "A type named `" <> Text.unpack (typeDefName d) <> "` was already defined earlier in this file."
+        RedefinedConst (Located location d) -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "A constant named `" <> Text.unpack (constDefName d) <> "` was already defined earlier in this file."
         RedefinedFn (Located location d) -> errorBundlePretty (parseErrorBundle location message)
           where
             message = "A function named `" <> Text.unpack (fnDefName d) <> "` was already defined earlier in this file."
@@ -414,6 +418,13 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
 
     for_ typeDefsByName \case
         _ : d : _ -> throwError (RedefinedType d)
+        _ -> pure ()
+
+    -- Check for redefined constants.
+    let constDefsByName = sortAndGroupBy (constDefName . unpack) constDefs
+
+    for_ constDefsByName \case
+        _ : d : _ -> throwError (RedefinedConst d)
         _ -> pure ()
 
     -- Check for redefined functions.

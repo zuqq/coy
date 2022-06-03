@@ -1,0 +1,7 @@
+const X: i64 = 0;
+
+const X: i64 = 1;
+
+fn main() -> () {
+    ()
+}
