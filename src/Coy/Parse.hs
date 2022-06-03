@@ -235,7 +235,6 @@ exprWithoutBlock = makeExprParser term ops
 
         rightBrace = "}}" $> "}"
 
-        -- Allow whitespace, but no actual format specification.
         hole = ("{" *> space *> "}") $> Hole
 
     ops =
@@ -291,7 +290,6 @@ exprWithoutBlock = makeExprParser term ops
 
         bitOr = Parser.char '|' <* Parser.notFollowedBy (Parser.char '|') <* space
 
--- This definition ties down all the type variables.
 decimal :: Parser Integer
 decimal = Text.Megaparsec.Char.Lexer.decimal
 

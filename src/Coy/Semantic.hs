@@ -544,8 +544,6 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
             at' <- resolveType at
             pure (FnArg an at')
 
--- This check comes after name resolution, because it uses the unsafe `Map.!`
--- operator to look up labels.
 sortTypeDefs :: [TypeDef 'Unchecked] -> Either (NonEmpty (TypeDef 'Unchecked)) [TypeDef 'Unchecked]
 sortTypeDefs typeDefs = bimap (fmap fromLabel) (fmap fromLabel) (topSort graph)
   where
@@ -617,8 +615,6 @@ checkExprWithBlock = \case
         (e0', t0) <- checkExprWithoutBlock (unpack e0)
         case t0 of
             Enum n0 -> do
-                -- Look up the enum variants using the unsafe `Map.!` operator;
-                -- if this fails, then we haven't set up the context correctly.
                 vs0 <- fmap (Map.! n0) (use enums)
 
                 checkedMatchArms <- for uncheckedMatchArms \(UncheckedMatchArm n v xs e) -> do
