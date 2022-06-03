@@ -415,6 +415,9 @@ semantic filePath input = first showError . checkModule
           where
             message = "The type `" <> prettyType t <> "` is not printable."
 
+invertEnumVariants :: [EnumVariant 'Checked] -> Map Text (Int, Vector (Type 'Checked))
+invertEnumVariants vs = Map.fromList [(v, (i, ts)) | (i, EnumVariant v ts) <- indexed vs]
+
 checkModule :: Module 'Unchecked -> Either SemanticError (Module 'Checked)
 checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
     -- Check for redefined types.
@@ -460,7 +463,7 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
 
     let context = Context
             { _structs = Map.fromList [(n, ts) | StructDef n ts <- typeDefs']
-            , _enums = Map.fromList [(n, enumVariants vs) | CheckedEnumDef n vs <- typeDefs']
+            , _enums = Map.fromList [(n, invertEnumVariants vs) | CheckedEnumDef n vs <- typeDefs']
             , _consts = Map.fromList [(n, t) | ConstDecl n t <- constDecls']
             , _strings = mempty
             , _fns = Map.fromList (intrinsicFns <> [(n, (fmap fnArgType as, t)) | CheckedFnDecl n as t <- fnDecls'])
@@ -540,8 +543,6 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
         resolveFnArg (FnArg an at) = do
             at' <- resolveType at
             pure (FnArg an at')
-
-    enumVariants vs = Map.fromList [(v, (i, ts)) | (i, EnumVariant v ts) <- indexed vs]
 
 -- This check comes after name resolution, because it uses the unsafe `Map.!`
 -- operator to look up labels.
