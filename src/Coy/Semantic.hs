@@ -599,6 +599,12 @@ checkExpr = \case
     UncheckedExprWithBlock e -> fmap (first CheckedExprWithBlock) (checkExprWithBlock e)
     UncheckedExprWithoutBlock e -> fmap (first CheckedExprWithoutBlock) (checkExprWithoutBlock (unpack e))
 
+histogram :: Ord a => [a] -> Map a Int
+histogram = Map.fromListWith (+) . fmap (, 1)
+
+occurrences :: Ord a => a -> Map a Int -> Int
+occurrences = Map.findWithDefault 0
+
 checkExprWithBlock
     :: ExprWithBlock 'Unchecked
     -> Semantic (ExprWithBlock 'Checked, Type 'Checked)
@@ -655,14 +661,6 @@ checkExprWithBlock = \case
 
                         sortedCheckedMatchArms = fmap (fst . snd) (sortOn fst checkedMatchArms)
             _ -> throwError (MatchScrutineeTypeMismatch (locate e0) t0)
-  where
-    -- This type signature ties down the type of @1@.
-    histogram :: Ord a => [a] -> Map a Int
-    histogram = Map.fromListWith (+) . fmap (, 1)
-
-    -- This type signature ties down the type of @0@.
-    occurrences :: Ord a => a -> Map a Int -> Int
-    occurrences = Map.findWithDefault 0
 
 checkExprWithoutBlock
     :: ExprWithoutBlock 'Unchecked
