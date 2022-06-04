@@ -11,7 +11,7 @@ import System.Exit (exitFailure)
 import System.FilePath (takeBaseName, (<.>))
 import System.IO (hPutStr, stderr)
 
-import qualified Data.ByteString as ByteString.IO (putStr, readFile, writeFile)
+import qualified Data.ByteString as ByteString.IO (getContents, putStr, readFile, writeFile)
 import qualified Data.Text.Encoding as Text.Encoding
 import qualified Data.Text.Lazy as Text.Lazy
 import qualified LLVM.Pretty
@@ -47,12 +47,17 @@ parseOptionsWithInfo =
             <> Options.Applicative.metavar "<output>"
             <> Options.Applicative.short 'o'
 
-tryReadFile :: FilePath -> IO (Either IOException ByteString)
-tryReadFile = try . ByteString.IO.readFile
+tryReadInput :: FilePath -> IO (Either IOException ByteString)
+tryReadInput inputFilePath = try read
+  where
+    read =
+        case inputFilePath of
+            "-" -> ByteString.IO.getContents
+            _ -> ByteString.IO.readFile inputFilePath
 
-readInputFile :: FilePath -> IO ByteString
-readInputFile inputFilePath = do
-    result <- tryReadFile inputFilePath
+readInput :: FilePath -> IO ByteString
+readInput inputFilePath = do
+    result <- tryReadInput inputFilePath
 
     case result of
         Left e -> do
@@ -88,8 +93,8 @@ checkInput inputFilePath input uncheckedModule =
             exitFailure
         Right checkedModule -> pure checkedModule
 
-tryWriteFile :: FilePath -> ByteString -> IO (Either IOException ())
-tryWriteFile outputFilePath = try . write
+tryWriteOutput :: FilePath -> ByteString -> IO (Either IOException ())
+tryWriteOutput outputFilePath = try . write
   where
     write =
         case outputFilePath of
@@ -98,7 +103,7 @@ tryWriteFile outputFilePath = try . write
 
 writeOutput :: FilePath -> ByteString -> IO ()
 writeOutput outputFilePath output = do
-    result <- tryWriteFile outputFilePath output
+    result <- tryWriteOutput outputFilePath output
 
     case result of
         Left e -> do
@@ -113,11 +118,19 @@ main = do
 
     let inputFilePath = inputFilePathOption options
 
-    let moduleName = takeBaseName inputFilePath
+    let moduleName =
+            case inputFilePath of
+                "-" -> "from_stdin"
+                _ -> takeBaseName inputFilePath
 
-    let outputFilePath = fromMaybe (moduleName <.> "ll") (outputFilePathOption options)
+    let defaultOutputFilePath =
+            case inputFilePath of
+                "-" -> "-"
+                _ -> moduleName <.> ".ll"
 
-    rawInput <- readInputFile inputFilePath
+    let outputFilePath = fromMaybe defaultOutputFilePath (outputFilePathOption options)
+
+    rawInput <- readInput inputFilePath
 
     input <- decodeRawInput inputFilePath rawInput
 
