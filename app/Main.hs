@@ -23,9 +23,9 @@ import Coy.Semantic
 import Coy.Syntax
 
 data Options = Options
-    { inputFilePathOption :: FilePath
+    { moduleNameOption :: Maybe String
     , outputFilePathOption :: Maybe FilePath
-    , moduleNameOption :: Maybe String
+    , inputFilePathOption :: FilePath
     }
 
 parseOptionsWithInfo :: Options.Applicative.ParserInfo Options
@@ -36,14 +36,16 @@ parseOptionsWithInfo =
   where
     parseOptions =
         Options
-        <$> parseInputFilePathOption
+        <$> parseModuleNameOption
         <*> parseOutputFilePathOption
-        <*> parseModuleNameOption
+        <*> parseInputFilePathOption
 
-    parseInputFilePathOption =
-        Options.Applicative.strArgument $
-            Options.Applicative.help "The input file."
-            <> Options.Applicative.metavar "<input>"
+    parseModuleNameOption =
+        optional . Options.Applicative.strOption $
+            Options.Applicative.help "The `ModuleID` of the resulting LLVM IR module."
+            <> Options.Applicative.long "module"
+            <> Options.Applicative.metavar "<module>"
+            <> Options.Applicative.short 'm'
 
     parseOutputFilePathOption =
         optional . Options.Applicative.strOption $
@@ -52,12 +54,10 @@ parseOptionsWithInfo =
             <> Options.Applicative.metavar "<output>"
             <> Options.Applicative.short 'o'
 
-    parseModuleNameOption =
-        optional . Options.Applicative.strOption $
-            Options.Applicative.help "The `ModuleID` of the resulting LLVM IR module."
-            <> Options.Applicative.long "module"
-            <> Options.Applicative.metavar "<module>"
-            <> Options.Applicative.short 'm'
+    parseInputFilePathOption =
+        Options.Applicative.strArgument $
+            Options.Applicative.help "The input file."
+            <> Options.Applicative.metavar "<input>"
 
 tryReadInput :: FilePath -> IO (Either IOException ByteString)
 tryReadInput inputFilePath = try read
