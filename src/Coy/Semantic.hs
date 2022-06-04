@@ -22,6 +22,7 @@ import Data.List (groupBy, intercalate, partition, sortOn)
 import Data.List.Index (indexed)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
+import Data.Set (Set)
 import Data.Text (Text)
 import Data.Text.Lazy.Builder (Builder)
 import Data.Traversable (for)
@@ -104,6 +105,8 @@ data SemanticError
     | PrintLnExprExcessHole Location
     | PrintLnExprExcessArg Location
     | TypeNotPrintable (Located (Type 'Checked))
+    | IntrinsicFn (Located Text)
+    | ReservedName (Located Text)
     deriving Show
 
 type Semantic = StateT Context (Except SemanticError)
@@ -170,6 +173,30 @@ intrinsicFns =
     , ("sin", (Vector.singleton F64, F64))
     , ("sqrt", (Vector.singleton F64, F64))
     ]
+
+intrinsicFnNames :: Set Text
+intrinsicFnNames = Set.fromList (fmap fst intrinsicFns)
+
+checkIntrinsicFn :: MonadError SemanticError m => Located Text -> m ()
+checkIntrinsicFn n = when (unpack n `Set.member` intrinsicFnNames) (throwError (IntrinsicFn n))
+
+reservedNames :: Set Text
+reservedNames =
+    Set.fromList
+        [ "const"
+        , "else"
+        , "enum"
+        , "false"
+        , "fn"
+        , "if"
+        , "let"
+        , "match"
+        , "struct"
+        , "true"
+        ]
+
+checkReservedName :: MonadError SemanticError m => Located Text -> m ()
+checkReservedName n = when (unpack n `Set.member` reservedNames) (throwError (ReservedName n))
 
 semantic :: String -> Text -> Module 'Unchecked -> Either String (Module 'Checked)
 semantic filePath input = first showError . checkModule
@@ -414,6 +441,15 @@ semantic filePath input = first showError . checkModule
         TypeNotPrintable (Located location t) -> errorBundlePretty (parseErrorBundle location message)
           where
             message = "The type `" <> prettyType t <> "` is not printable."
+        IntrinsicFn (Located location n) -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "The name `" <> Text.unpack n <> "` is already taken by an intrinsic function."
+        ReservedName (Located location n) -> errorBundlePretty (parseErrorBundle location message)
+          where
+            message = "The name `" <> Text.unpack n <> "` is reserved by the compiler."
+
+sortAndGroupBy :: Ord key => (a -> key) -> [a] -> [[a]]
+sortAndGroupBy key = groupBy ((==) `on` key) . sortOn key
 
 invertEnumVariants :: [EnumVariant 'Checked] -> Map Text (Int, Vector (Type 'Checked))
 invertEnumVariants vs = Map.fromList [(v, (i, ts)) | (i, EnumVariant v ts) <- indexed vs]
@@ -495,8 +531,6 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
             UncheckedFnDecl _ (Located arityLocation _) (Located returnTypeLocation _) = fnDeclsByName Map.! "main"
         _ -> error ("Internal error: expected at most one main function, got `" <> show mainFnDefs' <> "`.")
   where
-    sortAndGroupBy key = groupBy ((==) `on` key) . sortOn key
-
     structNames = Set.fromList [n | StructDef n _ <- fmap unpack typeDefs]
 
     enumNames = Set.fromList [n | UncheckedEnumDef n _ <- fmap unpack typeDefs]
@@ -536,13 +570,16 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
         pure (ConstDecl x constDeclType)
 
     resolveFnDecl (UncheckedFnDecl n as t) = do
+        checkIntrinsicFn n
+        checkReservedName n
         as' <- traverse resolveFnArg (unpack as)
         t' <- resolveType (unpack t)
-        pure (CheckedFnDecl n as' t')
+        pure (CheckedFnDecl (unpack n) as' t')
       where
-        resolveFnArg (FnArg an at) = do
+        resolveFnArg (UncheckedFnArg an at) = do
+            checkReservedName an
             at' <- resolveType at
-            pure (FnArg an at')
+            pure (CheckedFnArg (unpack an) at')
 
 sortTypeDefs :: [TypeDef 'Unchecked] -> Either (NonEmpty (TypeDef 'Unchecked)) [TypeDef 'Unchecked]
 sortTypeDefs typeDefs = bimap (fmap fromLabel) (fmap fromLabel) (topSort graph)
@@ -565,7 +602,8 @@ checkFnDef d@(CheckedFnDecl _ as returnType) b = do
     when (resultType /= returnType) (throwError (FnDefTypeMismatch (locateBlock b) resultType returnType))
     pure (FnDef d b')
   where
-    bindFnArg (FnArg an at) = bindValue an at
+    bindFnArg :: FnArg 'Checked -> Semantic ()
+    bindFnArg (CheckedFnArg an at) = bindValue an at
 
 checkBlock :: Block 'Unchecked -> Semantic (Block 'Checked, Type 'Checked)
 checkBlock (UncheckedBlock ss e) = do
@@ -575,11 +613,13 @@ checkBlock (UncheckedBlock ss e) = do
 
 checkStatement :: Statement 'Unchecked -> Semantic (Statement 'Checked)
 checkStatement = \case
-    UncheckedLetStatement (VarPattern x) e -> do
+    UncheckedLetStatement (UncheckedVarPattern x) e -> do
+        checkReservedName x
         (e', t) <- checkExpr e
-        bindValue x t
-        pure (CheckedLetStatement (VarPattern x) e')
+        bindValue (unpack x) t
+        pure (CheckedLetStatement (CheckedVarPattern (unpack x)) e')
     UncheckedLetStatement (UncheckedStructPattern n xs) e -> do
+        traverse_ checkReservedName (unpack xs)
         fieldTypes <- findStruct n
         let actualArity = Vector.length (unpack xs)
         let expectedArity = Vector.length fieldTypes
@@ -587,7 +627,7 @@ checkStatement = \case
         (e', actualType) <- checkExpr e
         let expectedType = Struct (unpack n)
         when (actualType /= expectedType) (throwError (StructPatternTypeMismatch (locateExpr e) actualType expectedType))
-        let xts = Vector.zip (unpack xs) fieldTypes
+        let xts = Vector.zip (fmap unpack (unpack xs)) fieldTypes
         traverse_ (uncurry bindValue) xts
         pure (CheckedLetStatement (CheckedStructPattern xts) e')
     UncheckedExprStatement e -> do
@@ -628,11 +668,12 @@ checkExprWithBlock = \case
                     case Map.lookup (unpack v) vs0 of
                         Nothing -> throwError (MatchArmEnumVariantNotFound (locate v) n0 (unpack v))
                         Just (i, fieldTypes) -> do
+                            traverse_ checkReservedName (unpack xs)
                             let actual = Vector.length (unpack xs)
                             let expected = Vector.length fieldTypes
                             when (actual /= expected) (throwError (StructPatternArityMismatch (locate xs) actual expected))
                             namespaced do
-                                let xts = Vector.zip (unpack xs) fieldTypes
+                                let xts = Vector.zip (fmap unpack (unpack xs)) fieldTypes
                                 traverse_ (uncurry bindValue) xts
                                 (e', resultType) <- checkExpr e
                                 pure (i, (CheckedMatchArm xts e', Located (locateExpr e) resultType))

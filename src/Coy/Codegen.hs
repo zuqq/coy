@@ -380,9 +380,9 @@ fnDef (FnDef (CheckedFnDecl n as t) b) =
 
     let defineFn = LLVM.IRBuilder.privateFunction n' in
 
-    let metadata = [(operandType at, operandAttrs at) | FnArg _ at <- toList as] in
+    let metadata = [(operandType at, operandAttrs at) | CheckedFnArg _ at <- toList as] in
 
-    let ans = [an | FnArg an _ <- toList as] in
+    let ans = [an | CheckedFnArg an _ <- toList as] in
 
     if hasPointerOperandType t then
         let returnArgType = operandType t
@@ -524,7 +524,7 @@ statement = \case
     CheckedLetStatement p e -> do
         a <- expr e
         case p of
-            VarPattern x -> bindValue x a
+            CheckedVarPattern x -> bindValue x a
             CheckedStructPattern xts -> destructureStruct xts a
     CheckedExprStatement e -> void (expr e)
 

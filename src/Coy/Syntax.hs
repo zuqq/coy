@@ -98,24 +98,32 @@ fnDefName :: FnDef u -> Text
 fnDefName (FnDef d _) = fnDeclName d
 
 data FnDecl (u :: Status) where
-    UncheckedFnDecl :: Text -> Located (Vector (FnArg 'Unchecked)) -> Located (Type 'Unchecked) -> FnDecl 'Unchecked
+    UncheckedFnDecl :: Located Text -> Located (Vector (FnArg 'Unchecked)) -> Located (Type 'Unchecked) -> FnDecl 'Unchecked
 
     CheckedFnDecl :: Text -> Vector (FnArg 'Checked) -> Type 'Checked -> FnDecl 'Checked
 
 fnDeclName :: FnDecl u -> Text
 fnDeclName = \case
-    UncheckedFnDecl n _ _ -> n
+    UncheckedFnDecl n _ _ -> unpack n
     CheckedFnDecl n _ _ -> n
 
 deriving instance Eq (FnDecl u)
 deriving instance Ord (FnDecl u)
 deriving instance Show (FnDecl u)
 
-data FnArg (u :: Status) = FnArg Text (Type u)
-    deriving (Eq, Ord, Show)
+data FnArg (u :: Status) where
+    UncheckedFnArg :: Located Text -> Type 'Unchecked -> FnArg 'Unchecked
+
+    CheckedFnArg :: Text -> Type 'Checked -> FnArg 'Checked
+
+deriving instance Eq (FnArg u)
+deriving instance Ord (FnArg u)
+deriving instance Show (FnArg u)
 
 fnArgType :: FnArg u -> Type u
-fnArgType (FnArg _ at) = at
+fnArgType = \case
+    UncheckedFnArg _ at -> at
+    CheckedFnArg _ at -> at
 
 data Block (u :: Status) where
     UncheckedBlock :: Vector (Located (Statement 'Unchecked)) -> Located (Expr 'Unchecked) -> Block 'Unchecked
@@ -143,9 +151,11 @@ deriving instance Ord (Statement u)
 deriving instance Show (Statement u)
 
 data Pattern (u :: Status) where
-    VarPattern :: Text -> Pattern u
+    UncheckedVarPattern :: Located Text -> Pattern 'Unchecked
 
-    UncheckedStructPattern :: Located Text -> Located (Vector Text) -> Pattern 'Unchecked
+    CheckedVarPattern :: Text -> Pattern 'Checked
+
+    UncheckedStructPattern :: Located Text -> Located (Vector (Located Text)) -> Pattern 'Unchecked
 
     CheckedStructPattern :: Vector (Text, Type 'Checked) -> Pattern 'Checked
 
@@ -224,7 +234,7 @@ data MatchArm (u :: Status) where
         -- ^ Name of the enum.
         -> Located Text
         -- ^ Name of the enum variant.
-        -> Located (Vector Text)
+        -> Located (Vector (Located Text))
         -- ^ Names for the components.
         -> Expr 'Unchecked
         -- ^ Right-hand side of the match arm.

@@ -85,7 +85,7 @@ fnDef = do
 fnDecl :: Parser (FnDecl 'Unchecked)
 fnDecl = do
     "fn" *> space1
-    n <- valueName
+    n <- located valueName
     as <- located (parenthesized (commaSeparated fnArg))
     "->" *> space
     t <- located typeName
@@ -93,10 +93,10 @@ fnDecl = do
 
 fnArg :: Parser (FnArg 'Unchecked)
 fnArg = do
-    an <- valueName
+    an <- located valueName
     colon
     at <- typeName
-    pure (FnArg an at)
+    pure (UncheckedFnArg an at)
 
 block :: Parser (Block 'Unchecked)
 block = withinBraces $ do
@@ -120,11 +120,11 @@ statement = letStatement <|> exprStatement
 pattern :: Parser (Pattern 'Unchecked)
 pattern = varPattern <|> structPattern
   where
-    varPattern = VarPattern <$> valueName
+    varPattern = UncheckedVarPattern <$> located valueName
 
     structPattern = do
         n <- located structName
-        vs <- located (parenthesized (commaSeparated valueName))
+        vs <- located (parenthesized (commaSeparated (located valueName)))
         pure (UncheckedStructPattern n (Vector.fromList <$> vs))
 
 expr :: Parser (Expr 'Unchecked)
@@ -157,7 +157,7 @@ matchArm = do
     n <- located parseEnumName
     void "::"
     v <- located parseEnumVariantName
-    xs <- located (parenthesized (commaSeparated valueName))
+    xs <- located (parenthesized (commaSeparated (located valueName)))
     "=>" *> space
     e <- expr
     pure (UncheckedMatchArm n v (Vector.fromList <$> xs) e)

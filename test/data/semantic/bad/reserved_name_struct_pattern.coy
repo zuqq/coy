@@ -1,0 +1,7 @@
+struct S(i64, i64);
+
+fn main() -> () {
+    let S(if, else) = S(1, 0);
+
+    ()
+}

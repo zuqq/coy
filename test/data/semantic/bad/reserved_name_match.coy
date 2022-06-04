@@ -1,0 +1,13 @@
+enum E {
+    A(i64),
+    B()
+}
+
+fn main() -> () {
+    let e = E::B();
+
+    match e {
+        E::A(const) => (),
+        E::B() => ()
+    }
+}
