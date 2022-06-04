@@ -220,6 +220,11 @@ semantic filePath input = first showError . checkModule
         [] -> "<none>"
         ts -> intercalate ", " ["`" <> prettyType t <> "`" | t <- ts]
 
+    prettyArity :: Int -> String
+    prettyArity = \case
+        1 -> "1 argument"
+        n -> show n <> " arguments"
+
     showError :: SemanticError -> String
     showError = \case
         RedefinedType (Located location d) -> errorBundlePretty (parseErrorBundle location message)
@@ -298,8 +303,10 @@ semantic filePath input = first showError . checkModule
           where
             message =
                 "This function has "
-                <> show arity
-                <> " arguments, but the main function is required to have no arguments."
+                <> prettyArity arity
+                <> ", but the main function is required to have "
+                <> prettyArity 0
+                <> "."
         MainFnDefReturnTypeMismatch location returnType -> errorBundlePretty (parseErrorBundle location message)
           where
             message =
@@ -402,9 +409,9 @@ semantic filePath input = first showError . checkModule
           where
             message =
                 "This pattern has "
-                <> show actual
-                <> " arguments, but it was expected to have "
-                <> show expected
+                <> prettyArity actual
+                <> ", but it was expected to have "
+                <> prettyArity expected
                 <> "."
         StructPatternTypeMismatch location actual expected -> errorBundlePretty (parseErrorBundle location message)
           where
