@@ -25,6 +25,7 @@ import Coy.Syntax
 data Options = Options
     { inputFilePathOption :: FilePath
     , outputFilePathOption :: Maybe FilePath
+    , moduleNameOption :: Maybe String
     }
 
 parseOptionsWithInfo :: Options.Applicative.ParserInfo Options
@@ -33,7 +34,11 @@ parseOptionsWithInfo =
         Options.Applicative.fullDesc
         <> Options.Applicative.header "Compile `.coy` files to LLVM IR."
   where
-    parseOptions = liftA2 Options parseInputFilePathOption parseOutputFilePathOption
+    parseOptions =
+        Options
+        <$> parseInputFilePathOption
+        <*> parseOutputFilePathOption
+        <*> parseModuleNameOption
 
     parseInputFilePathOption =
         Options.Applicative.strArgument $
@@ -46,6 +51,13 @@ parseOptionsWithInfo =
             <> Options.Applicative.long "output"
             <> Options.Applicative.metavar "<output>"
             <> Options.Applicative.short 'o'
+
+    parseModuleNameOption =
+        optional . Options.Applicative.strOption $
+            Options.Applicative.help "The `ModuleID` of the resulting LLVM IR module."
+            <> Options.Applicative.long "module"
+            <> Options.Applicative.metavar "<module>"
+            <> Options.Applicative.short 'm'
 
 tryReadInput :: FilePath -> IO (Either IOException ByteString)
 tryReadInput inputFilePath = try read
@@ -118,10 +130,12 @@ main = do
 
     let inputFilePath = inputFilePathOption options
 
-    let moduleName =
+    let defaultModuleName =
             case inputFilePath of
                 "-" -> "from_stdin"
                 _ -> takeBaseName inputFilePath
+
+    let moduleName = fromMaybe defaultModuleName (moduleNameOption options)
 
     let defaultOutputFilePath =
             case inputFilePath of
