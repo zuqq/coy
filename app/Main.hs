@@ -50,14 +50,14 @@ parseOptionsWithInfo =
 
     parseOutputFilePathOption =
         optional . Options.Applicative.strOption $
-            Options.Applicative.help "The output file."
+            Options.Applicative.help "The output file; pass in `-` to write to stdout."
             <> Options.Applicative.long "output"
             <> Options.Applicative.metavar "<output>"
             <> Options.Applicative.short 'o'
 
     parseInputFilePathOption =
         Options.Applicative.strArgument $
-            Options.Applicative.help "The input file."
+            Options.Applicative.help "The input file; pass in `-` to read from stdin."
             <> Options.Applicative.metavar "<input>"
 
 tryReadInput :: FilePath -> IO (Either IOException ByteString)
