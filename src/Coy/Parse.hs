@@ -4,14 +4,14 @@
 
 module Coy.Parse where
 
-import Control.Applicative (many, (<|>))
+import Control.Applicative ((<|>))
 import Control.Monad.Combinators.Expr (Operator (InfixL, InfixN, Postfix, Prefix), makeExprParser)
 import Data.Bifunctor (first)
 import Data.Char (isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isDigit, isPrint)
 import Data.Functor (void, ($>))
 import Data.Text (Text)
 import Data.Void (Void)
-import Text.Megaparsec (Parsec, errorBundlePretty, (<?>))
+import Text.Megaparsec (Parsec, errorBundlePretty, many, (<?>))
 
 import qualified Data.Text as Text
 import qualified Data.Vector as Vector
