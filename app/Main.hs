@@ -1,9 +1,10 @@
 {-# LANGUAGE BlockArguments    #-}
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-import Control.Applicative (liftA2, optional)
-import Control.Exception (IOException, throwIO, try)
+import Control.Applicative (optional)
+import Control.Exception (IOException, try)
 import Data.ByteString (ByteString)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
@@ -60,12 +61,9 @@ parseOptionsWithInfo =
             <> Options.Applicative.metavar "<input>"
 
 tryReadInput :: FilePath -> IO (Either IOException ByteString)
-tryReadInput inputFilePath = try read
-  where
-    read =
-        case inputFilePath of
-            "-" -> ByteString.IO.getContents
-            _ -> ByteString.IO.readFile inputFilePath
+tryReadInput = \case
+    "-" -> try ByteString.IO.getContents
+    inputFilePath -> try (ByteString.IO.readFile inputFilePath)
 
 readInput :: FilePath -> IO ByteString
 readInput inputFilePath = do
@@ -106,12 +104,9 @@ checkInput inputFilePath input uncheckedModule =
         Right checkedModule -> pure checkedModule
 
 tryWriteOutput :: FilePath -> ByteString -> IO (Either IOException ())
-tryWriteOutput outputFilePath = try . write
-  where
-    write =
-        case outputFilePath of
-            "-" -> ByteString.IO.putStr
-            _ -> ByteString.IO.writeFile outputFilePath
+tryWriteOutput = \case
+    "-" -> try . ByteString.IO.putStr
+    outputFilePath -> try . ByteString.IO.writeFile outputFilePath
 
 writeOutput :: FilePath -> ByteString -> IO ()
 writeOutput outputFilePath output = do
