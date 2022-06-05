@@ -121,13 +121,11 @@ struct Sphere(Vector, f64);
 fn sphere_time(sphere: Sphere, ray: Ray) -> MaybeF64 {
     let Sphere(center, radius) = sphere;
     let Ray(origin, direction) = ray;
-
     let v = vector_sub(origin, center);
     let a = dot_product(direction, direction);
     let b = dot_product(v, direction);
     let c = dot_product(v, v) - radius * radius;
     let disc = b * b - a * c;
-
     match safe_sqrt(disc) {
         MaybeF64::None() => MaybeF64::None(),
         MaybeF64::Some(root) => {
@@ -233,9 +231,8 @@ fn scatter_ray(
             let f2 = 1.0 + a;
             let f3 = f1 + (1.0 - f1) * f2 * f2 * f2 * f2 * f2;
 
-            let RandomF64(x, s1) = next(s0);
-
             // Reflect with probability `f3` or if Snell's law doesn't apply.
+            let RandomF64(x, s1) = next(s0);
             let direction = if x < f3 || directed_r * sqrt(1.0 - a * a) > 1.0 {
                 reflect(unit_v, directed_n)
             } else {
@@ -318,12 +315,12 @@ fn shoot(camera: Camera, i: i64, j: i64, s0: i64) -> RandomRay {
     // anti-aliasing purposes.
     let RandomF64(dj, s3) = next(s2);
     let RandomF64(di, s4) = next(s3);
-
     let source = vector_add(vector_add(lens, vector_mul(dx, x)), vector_mul(dy, y));
     let target = vector_add(
         vector_add(o, vector_mul((j as f64 + dj) * s, x)),
         vector_mul((i as f64 + di) * s, y)
     );
+
     RandomRay(Ray(source, vector_sub(target, source)), s4)
 }
 
@@ -380,7 +377,6 @@ fn ground_time(ray: Ray) -> MaybeF64 {
     let Ray(p, v) = ray;
     let Vector(_, y0, _) = p;
     let Vector(_, dy, _) = v;
-
     if y0 >= 0.0 && dy < 0.0 || y0 <= 0.0 && dy > 0.0 {
         safe_time(y0 / (-dy))
     } else {
@@ -391,7 +387,6 @@ fn ground_time(ray: Ray) -> MaybeF64 {
 fn ground_hit(material: Material, ray: Ray) -> MaybeHit {
     let Ray(p, _) = ray;
     let Vector(_, _, z) = p;
-
     match ground_time(ray) {
         MaybeF64::None() => MaybeHit::None(),
         MaybeF64::Some(t) => {
@@ -406,11 +401,12 @@ fn ground_hit(material: Material, ray: Ray) -> MaybeHit {
 }
 
 const SPHERE0: Sphere = Sphere(Vector(0.000, 0.5, 0.000), 0.5);
-const SPHERE1: Sphere = Sphere(Vector(0.707, 0.5, -0.707), 0.5);
-const SPHERE2: Sphere = Sphere(Vector(-1.250, 1.5, -5.000), 1.5);
-
 const SPHERE_MATERIAL0: Material = Material::Specular(Color(0.773, 0.777, 0.780));
+
+const SPHERE1: Sphere = Sphere(Vector(0.707, 0.5, -0.707), 0.5);
 const SPHERE_MATERIAL1: Material = Material::Dielectric(1.5);
+
+const SPHERE2: Sphere = Sphere(Vector(-1.250, 1.5, -5.000), 1.5);
 const SPHERE_MATERIAL2: Material = Material::Diffuse(Color(0.851, 0.008, 0.490));
 
 const GROUND_MATERIAL: Material = Material::Diffuse(Color(0.482, 0.702, 0.412));
