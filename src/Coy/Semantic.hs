@@ -562,10 +562,10 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
             ts' <- traverse resolveType ts
             pure (StructDef n ts')
         UncheckedEnumDef n vs -> do
-            vs' <- traverse (resolveEnumVariant . unpack) vs
             for_ (sortAndGroupBy (enumVariantName . unpack) vs) \case
                 _ : v : _ -> throwError (RedefinedEnumVariant (locate v) n (enumVariantName (unpack v)))
                 _ -> pure ()
+            vs' <- traverse (resolveEnumVariant . unpack) vs
             pure (CheckedEnumDef n vs')
       where
         resolveEnumVariant (EnumVariant v ts) = do
