@@ -3,13 +3,13 @@ fn scale(x: f64) -> i64 {
 }
 
 fn print_ppm_header(width: i64, height: i64) -> () {
-    println!("P3");
-    println!("{} {}", width, height);
-    println!("255")
+    print!("P3\n");
+    print!("{} {}\n", width, height);
+    print!("255\n")
 }
 
 fn print_ppm_pixel(r: f64, g: f64, b: f64) -> () {
-    println!("{} {} {}", scale(r), scale(g), scale(b))
+    print!("{} {} {}\n", scale(r), scale(g), scale(b))
 }
 
 fn main() -> () {

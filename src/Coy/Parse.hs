@@ -169,7 +169,7 @@ exprWithoutBlock = makeExprParser term ops
         Parser.try litExpr
         <|> parenthesized exprWithoutBlock
         <|> Parser.try callExpr
-        <|> Parser.try printLnExpr
+        <|> Parser.try printExpr
         <|> varExpr
         <|> Parser.try enumExpr
         <|> Parser.try structExpr
@@ -198,14 +198,14 @@ exprWithoutBlock = makeExprParser term ops
         es <- located (parenthesized (commaSeparated exprWithoutBlock))
         pure (UncheckedStructExpr n (Vector.fromList <$> es))
 
-    printLnExpr = do
-        void "println"
+    printExpr = do
+        void "print"
         Parser.char '!' *> space
         (f, es) <- parenthesized $ do
             f <- formatString
             es <- many (comma *> located exprWithoutBlock)
             pure (f, es)
-        pure (UncheckedPrintLnExpr f es)
+        pure (UncheckedPrintExpr f es)
       where
         formatString = do
             void (Parser.char '"')

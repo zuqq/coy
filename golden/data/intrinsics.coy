@@ -1,5 +1,5 @@
 fn main() -> () {
-    println!("cos(0.0) == {}", cos(0.0));
-    println!("sin(0.0) == {}", sin(0.0));
-    println!("sqrt(2.0) == {}", sqrt(2.0))
+    print!("cos(0.0) == {}\n", cos(0.0));
+    print!("sin(0.0) == {}\n", sin(0.0));
+    print!("sqrt(2.0) == {}\n", sqrt(2.0))
 }

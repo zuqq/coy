@@ -102,8 +102,8 @@ data SemanticError
     | StructPatternTypeMismatch Location (Type 'Checked) (Type 'Checked)
     | UnaryOpTypeMismatch Location (UnaryOp 'Unchecked) (Type 'Checked)
     | BinaryOpTypeMismatch Location (BinaryOp 'Unchecked) (Type 'Checked) (Type 'Checked)
-    | PrintLnExprExcessHole Location
-    | PrintLnExprExcessArg Location
+    | PrintExprExcessHole Location
+    | PrintExprExcessArg Location
     | TypeNotPrintable (Located (Type 'Checked))
     | IntrinsicFn (Located Text)
     | ReservedName (Located Text)
@@ -439,10 +439,10 @@ semantic filePath input = first showError . checkModule
                 <> "`, `"
                 <> prettyType t1
                 <> "`."
-        PrintLnExprExcessHole location -> errorBundlePretty (parseErrorBundle location message)
+        PrintExprExcessHole location -> errorBundlePretty (parseErrorBundle location message)
           where
             message = "No argument was given for this hole."
-        PrintLnExprExcessArg location -> errorBundlePretty (parseErrorBundle location message)
+        PrintExprExcessArg location -> errorBundlePretty (parseErrorBundle location message)
           where
             message = "No hole was given for this argument"
         TypeNotPrintable (Located location t) -> errorBundlePretty (parseErrorBundle location message)
@@ -772,20 +772,20 @@ checkExprWithoutBlock = \case
         (i, fieldTypes) <- findEnumVariant n v
         when (ts /= fieldTypes) (throwError (ArgumentTypesMismatch (locate es) ts fieldTypes))
         pure (CheckedEnumExpr (unpack n) i ets', Enum (unpack n))
-    UncheckedPrintLnExpr (UncheckedFormatString cs) es -> do
+    UncheckedPrintExpr (UncheckedFormatString cs) es -> do
         ets' <- traverse (traverse checkExprWithoutBlock) es
 
         let ts = fmap (fmap snd) ets'
 
         builder <- loop mempty cs ts
 
-        let f = Text.Lazy.toStrict (Text.Lazy.Builder.toLazyText (builder <> "\n"))
+        let f = Text.Lazy.toStrict (Text.Lazy.Builder.toLazyText builder)
 
         i <- bindString f
 
         let es' = fmap (fst . unpack) ets'
 
-        pure (CheckedPrintLnExpr (CheckedFormatString i) es', Unit)
+        pure (CheckedPrintExpr (CheckedFormatString i) es', Unit)
       where
         loop builder chunks types =
             let (builder', chunks') = nonHoles builder chunks in
@@ -804,9 +804,9 @@ checkExprWithoutBlock = \case
                 -- There are neither holes nor arguments left, so we are done.
                 ([], []) -> pure builder
                 -- There are too many holes.
-                (c : _, []) -> throwError (PrintLnExprExcessHole (locate c))
+                (c : _, []) -> throwError (PrintExprExcessHole (locate c))
                 -- There are too many arguments.
-                ([], t : _) -> throwError (PrintLnExprExcessArg (locate t))
+                ([], t : _) -> throwError (PrintExprExcessArg (locate t))
                 -- There are both holes and arguments left.
                 (_ : chunks', t : types') -> do
                     s <- formatSpecifier t

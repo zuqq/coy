@@ -12,7 +12,7 @@ fn main_loop(u: i64, i: i64) -> () {
         ()
     } else {
         let RandomF64(x, v) = next(u);
-        println!("{}", x);
+        print!("{}\n", x);
         main_loop(v, i - 1)
     }
 }

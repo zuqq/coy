@@ -342,14 +342,14 @@ data ExprWithoutBlock (u :: Status) where
         -- ^ Arguments with their types.
         -> ExprWithoutBlock 'Checked
 
-    UncheckedPrintLnExpr
+    UncheckedPrintExpr
         :: FormatString 'Unchecked
         -- ^ The format string.
         -> [Located (ExprWithoutBlock 'Unchecked)]
         -- ^ Arguments.
         -> ExprWithoutBlock 'Unchecked
 
-    CheckedPrintLnExpr
+    CheckedPrintExpr
         :: FormatString 'Checked
         -- ^ The format string.
         -> [ExprWithoutBlock 'Checked]

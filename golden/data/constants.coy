@@ -1,5 +1,5 @@
 const NEGATIVE_ONE: i64 = -1;
 
 fn main() -> () {
-    println!("NEGATIVE_ONE == {}", NEGATIVE_ONE)
+    print!("NEGATIVE_ONE == {}\n", NEGATIVE_ONE)
 }

@@ -9,6 +9,6 @@ fn dot_product(v: Vector, w: Vector) -> f64 {
 fn main() -> () {
     let v = Vector(1.0, 0.0, 0.0);
     let w = Vector(0.0, 2.0, 0.0);
-    println!("dot_product(v, w) == {}", dot_product(v, w));
-    println!("dot_product(w, w) == {}", dot_product(w, w))
+    print!("dot_product(v, w) == {}\n", dot_product(v, w));
+    print!("dot_product(w, w) == {}\n", dot_product(w, w))
 }

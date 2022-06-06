@@ -1,3 +1,3 @@
 fn main() -> () {
-    println!("Braces can be escaped by doubling them up: {{}}. Here's a number: {}", 1)
+    print!("Braces can be escaped by doubling them up: {{}}. Here's a number: {}\n", 1)
 }

@@ -7,6 +7,6 @@ fn true_or_false(b: bool) -> i64 {
 }
 
 fn main() -> () {
-    println!("{}", true_or_false(true));
-    println!("{}", true_or_false(false))
+    print!("{}\n", true_or_false(true));
+    print!("{}\n", true_or_false(false))
 }

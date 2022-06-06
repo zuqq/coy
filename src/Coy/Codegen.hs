@@ -663,7 +663,7 @@ exprWithoutBlock = \case
             LLVM.IRBuilder.call fn as'
     CheckedStructExpr n ets -> constructStruct n ets
     CheckedEnumExpr n i ets -> constructEnumVariant n i ets
-    CheckedPrintLnExpr (CheckedFormatString i) es -> do
+    CheckedPrintExpr (CheckedFormatString i) es -> do
         a0 <- findString i
         as <- traverse exprWithoutBlock es
         void (LLVM.IRBuilder.call printf [(a, mempty) | a <- a0 : as])

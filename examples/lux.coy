@@ -325,7 +325,7 @@ fn shoot(camera: Camera, i: i64, j: i64, s0: i64) -> RandomRay {
 }
 
 fn print_ppm_header(width: i64, height: i64) -> () {
-    println!("P3 {} {} 255", width, height)
+    print!("P3 {} {} 255\n", width, height)
 }
 
 fn scale(x: f64) -> i64 {
@@ -334,7 +334,7 @@ fn scale(x: f64) -> i64 {
 
 fn print_ppm_color(c: Color) -> () {
     let Color(r, g, b) = c;
-    println!("{} {} {}", scale(r), scale(g), scale(b))
+    print!("{} {} {}\n", scale(r), scale(g), scale(b))
 }
 
 struct Hit(

@@ -11,6 +11,6 @@ fn from_maybe_f64(default: f64, a: MaybeF64) -> f64 {
 }
 
 fn main() -> () {
-    println!("{}", from_maybe_f64(0.1, MaybeF64::None()));
-    println!("{}", from_maybe_f64(0.1, MaybeF64::Some(-0.1)))
+    print!("{}\n", from_maybe_f64(0.1, MaybeF64::None()));
+    print!("{}\n", from_maybe_f64(0.1, MaybeF64::Some(-0.1)))
 }
