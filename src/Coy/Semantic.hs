@@ -564,10 +564,10 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
                 _ -> pure ()
             vs' <- traverse (resolveEnumVariant . unpack) vs
             pure (CheckedEnumDef n vs')
-      where
-        resolveEnumVariant (EnumVariant v ts) = do
-            ts' <- traverse resolveType ts
-            pure (EnumVariant v ts')
+
+    resolveEnumVariant (EnumVariant v ts) = do
+        ts' <- traverse resolveType ts
+        pure (EnumVariant v ts')
 
     resolveConstDecl (ConstDecl x t) = do
         constDeclType <- resolveType t
@@ -579,11 +579,11 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
         as' <- traverse resolveFnArg (unpack as)
         t' <- resolveType (unpack t)
         pure (CheckedFnDecl (unpack n) as' t')
-      where
-        resolveFnArg (UncheckedFnArg an at) = do
-            checkReservedName an
-            at' <- resolveType at
-            pure (CheckedFnArg (unpack an) at')
+
+    resolveFnArg (UncheckedFnArg an at) = do
+        checkReservedName an
+        at' <- resolveType at
+        pure (CheckedFnArg (unpack an) at')
 
 sortTypeDefs :: [TypeDef 'Unchecked] -> Either (NonEmpty (TypeDef 'Unchecked)) [TypeDef 'Unchecked]
 sortTypeDefs typeDefs = bimap (fmap fromLabel) (fmap fromLabel) (topSort graph)
