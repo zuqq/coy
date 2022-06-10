@@ -184,20 +184,6 @@ exprWithoutBlock = makeExprParser term ops
 
     varExpr = UncheckedVarExpr <$> located valueName
 
-    constExpr = UncheckedConstExpr <$> located constName
-
-    enumExpr = do
-        n <- located parseEnumName
-        void "::"
-        v <- located parseEnumVariantName
-        es <- located (parenthesized (commaSeparated exprWithoutBlock))
-        pure (UncheckedEnumExpr n v (Vector.fromList <$> es))
-
-    structExpr = do
-        n <- located structName
-        es <- located (parenthesized (commaSeparated exprWithoutBlock))
-        pure (UncheckedStructExpr n (Vector.fromList <$> es))
-
     printExpr = do
         void "print"
         Parser.char '!' *> space
@@ -236,6 +222,20 @@ exprWithoutBlock = makeExprParser term ops
         rightBrace = "}}" $> "}"
 
         hole = ("{" *> space *> "}") $> Hole
+
+    enumExpr = do
+        n <- located parseEnumName
+        void "::"
+        v <- located parseEnumVariantName
+        es <- located (parenthesized (commaSeparated exprWithoutBlock))
+        pure (UncheckedEnumExpr n v (Vector.fromList <$> es))
+
+    structExpr = do
+        n <- located structName
+        es <- located (parenthesized (commaSeparated exprWithoutBlock))
+        pure (UncheckedStructExpr n (Vector.fromList <$> es))
+
+    constExpr = UncheckedConstExpr <$> located constName
 
     ops =
         [
