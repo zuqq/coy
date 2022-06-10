@@ -201,31 +201,28 @@ checkReservedName n = when (unpack n `Set.member` reservedNames) (throwError (Re
 semantic :: String -> Text -> Module 'Unchecked -> Either String (Module 'Checked)
 semantic filePath input = first showError . checkModule
   where
-    initialPosState = PosState
-        { pstateInput = input
-        , pstateOffset = 0
-        , pstateSourcePos = initialPos filePath
-        , pstateTabWidth = defaultTabWidth
-        , pstateLinePrefix = mempty
-        }
-
     parseErrorBundle :: Location -> String -> ParseErrorBundle Text Void
     parseErrorBundle location message = ParseErrorBundle
         { bundleErrors = NonEmpty.singleton (FancyError (offset location) (Set.singleton (ErrorFail message)))
         , bundlePosState = initialPosState
         }
+      where
+        initialPosState = PosState
+            { pstateInput = input
+            , pstateOffset = 0
+            , pstateSourcePos = initialPos filePath
+            , pstateTabWidth = defaultTabWidth
+            , pstateLinePrefix = mempty
+            }
 
-    prettyTypeList :: [Type u] -> String
     prettyTypeList = \case
         [] -> "<none>"
         ts -> intercalate ", " ["`" <> prettyType t <> "`" | t <- ts]
 
-    prettyArity :: Int -> String
     prettyArity = \case
         1 -> "1 argument"
         n -> show n <> " arguments"
 
-    showError :: SemanticError -> String
     showError = \case
         RedefinedType (Located location d) -> errorBundlePretty (parseErrorBundle location message)
           where
