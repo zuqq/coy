@@ -652,9 +652,7 @@ histogram = Map.fromListWith (+) . fmap (, 1)
 occurrences :: Ord a => a -> Map a Int -> Int
 occurrences = Map.findWithDefault 0
 
-checkExprWithBlock
-    :: ExprWithBlock 'Unchecked
-    -> Semantic (ExprWithBlock 'Checked, Type 'Checked)
+checkExprWithBlock :: ExprWithBlock 'Unchecked -> Semantic (ExprWithBlock 'Checked, Type 'Checked)
 checkExprWithBlock = \case
     BlockExpr b -> fmap (first BlockExpr) (checkBlock b)
     UncheckedIfExpr e b0 b1 -> do
@@ -710,9 +708,7 @@ checkExprWithBlock = \case
                         sortedCheckedMatchArms = fmap (fst . snd) (sortOn fst checkedMatchArms)
             _ -> throwError (MatchScrutineeTypeMismatch (locate e0) t0)
 
-checkExprWithoutBlock
-    :: ExprWithoutBlock 'Unchecked
-    -> Semantic (ExprWithoutBlock 'Checked, Type 'Checked)
+checkExprWithoutBlock :: ExprWithoutBlock 'Unchecked -> Semantic (ExprWithoutBlock 'Checked, Type 'Checked)
 checkExprWithoutBlock = \case
     LitExpr l -> pure (LitExpr l, litType l)
     UncheckedVarExpr x -> do
@@ -819,18 +815,13 @@ checkExprWithoutBlock = \case
                 F64 -> pure "%f"
                 _ -> throwError (TypeNotPrintable t)
 
-checkConstDef
-    :: ConstDecl 'Checked
-    -> Located (ConstInit 'Unchecked)
-    -> Semantic (ConstDef 'Checked)
+checkConstDef :: ConstDecl 'Checked -> Located (ConstInit 'Unchecked) -> Semantic (ConstDef 'Checked)
 checkConstDef d@(ConstDecl _ constDeclType) c = do
     (c', t) <- checkConstInit (unpack c)
     when (t /= constDeclType) (throwError (ConstDefTypeMismatch (locate c) t constDeclType))
     pure (CheckedConstDef d c')
 
-checkConstInit
-    :: ConstInit 'Unchecked
-    -> Semantic (ConstInit 'Checked, Type 'Checked)
+checkConstInit :: ConstInit 'Unchecked -> Semantic (ConstInit 'Checked, Type 'Checked)
 checkConstInit = \case
     LitInit l -> pure (LitInit l, litType l)
     UncheckedNegLitInit l ->
