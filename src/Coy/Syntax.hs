@@ -215,7 +215,7 @@ data ExprWithBlock (u :: Status) where
         -> ExprWithBlock 'Checked
 
 -- Special treatment for expressions that are wrapped in a block, in order to
--- point at the expression that determines the blocks' type, not the block
+-- point at the expression that determines the block's type, not the block
 -- itself.
 locateExprWithBlock :: ExprWithBlock 'Unchecked -> Location
 locateExprWithBlock = \case
