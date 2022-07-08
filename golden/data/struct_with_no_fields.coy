@@ -1,0 +1,11 @@
+struct S();
+
+fn absurd(s: S) -> () {
+    let S() = s;
+
+    ()
+}
+
+fn main() -> () {
+    print!("Success!\n")
+}
