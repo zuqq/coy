@@ -250,7 +250,10 @@ computeEnumSizes typeDefs = enumSizes
 
     structSize = totalSize 0
 
-    enumSize vs = maximum [enumVariantSize ts | EnumVariant _ ts <- vs]
+    enumSize = \case
+        -- Give zero-variant enums a tag so that the representation is uniform.
+        [] -> tagSize
+        vs -> maximum [enumVariantSize ts | EnumVariant _ ts <- vs]
 
     enumVariantSize = totalSize tagSize
 
@@ -556,6 +559,10 @@ exprWithBlock = \case
 
         joinLabel <- LLVM.IRBuilder.block
         LLVM.IRBuilder.phi [thenOut, elseOut]
+    -- The code path for `match` expressions with at least one arm uses a phi
+    -- node, which requires a predecessor; therefore it is more convenient to
+    -- fall into a completely different code path here.
+    CheckedMatchExpr _ _ [] -> exprWithoutBlock (LitExpr (UnitLit ()))
     CheckedMatchExpr e0 n as -> mdo
         p0 <- exprWithoutBlock e0
         tagPointer <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr tagType)

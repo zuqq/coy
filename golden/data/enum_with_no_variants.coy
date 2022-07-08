@@ -1,0 +1,9 @@
+enum E {}
+
+fn absurd(e: E) -> () {
+    match e {}
+}
+
+fn main() -> () {
+    print!("Success!\n")
+}
