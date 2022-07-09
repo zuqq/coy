@@ -2,7 +2,6 @@ struct S();
 
 fn absurd(s: S) -> () {
     let S() = s;
-
     ()
 }
 
