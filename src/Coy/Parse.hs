@@ -11,7 +11,7 @@ import Data.Char (isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isDigit, isPr
 import Data.Functor (void, ($>))
 import Data.Text (Text)
 import Data.Void (Void)
-import Text.Megaparsec (Parsec, errorBundlePretty, many)
+import Text.Megaparsec (Parsec, errorBundlePretty, many, (<?>))
 
 import qualified Data.Text as Text
 import qualified Data.Vector as Vector
@@ -85,10 +85,10 @@ fnDef = do
 fnDecl :: Parser (FnDecl 'Unchecked)
 fnDecl = do
     "fn" *> space1
-    n <- located valueName
+    n <- located valueName <?> "function name"
     as <- located (parenthesized (commaSeparated fnArg))
     "->" *> space
-    t <- located typeName
+    t <- located typeName <?> "function return type"
     pure (UncheckedFnDecl n (Vector.fromList <$> as) t)
 
 fnArg :: Parser (FnArg 'Unchecked)
