@@ -71,7 +71,7 @@ readInput inputFilePath = do
 
     case result of
         Left e -> do
-            hPutStr stderr ("Failed to read input file " <> inputFilePath <> ":\n\n" <> show e)
+            hPutStr stderr ("Failed to read input file `" <> inputFilePath <> "`:\n\n" <> show e)
 
             exitFailure
         Right rawInput -> pure rawInput
@@ -80,7 +80,7 @@ decodeRawInput :: FilePath -> ByteString -> IO Text
 decodeRawInput inputFilePath rawInput =
     case Text.Encoding.decodeUtf8' rawInput of
         Left e -> do
-            hPutStr stderr ("Failed to decode input file " <> inputFilePath <> " as UTF-8:\n\n" <> show e)
+            hPutStr stderr ("Failed to decode input file `" <> inputFilePath <> "` as UTF-8:\n\n" <> show e)
 
             exitFailure
         Right input -> pure input
