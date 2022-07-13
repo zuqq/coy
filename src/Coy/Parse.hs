@@ -155,7 +155,7 @@ exprWithBlock = blockExpr <|> ifExpr <|> matchExpr
 matchArm :: Parser (MatchArm 'Unchecked)
 matchArm = do
     n <- located parseEnumName
-    void "::"
+    "::" *> space
     v <- located parseEnumVariantName
     xs <- located (parenthesized (commaSeparated (located valueName)))
     "=>" *> space
@@ -225,7 +225,7 @@ exprWithoutBlock = makeExprParser term ops
 
     enumExpr = do
         n <- located parseEnumName
-        void "::"
+        "::" *> space
         v <- located parseEnumVariantName
         es <- located (parenthesized (commaSeparated exprWithoutBlock))
         pure (UncheckedEnumExpr n v (Vector.fromList <$> es))
@@ -341,7 +341,7 @@ constDef = do
 
     enumInit = do
         n <- located parseEnumName
-        void "::"
+        "::" *> space
         v <- located parseEnumVariantName
         cs <- located (parenthesized (commaSeparated constInit))
         pure (UncheckedEnumInit n v (Vector.fromList <$> cs))
