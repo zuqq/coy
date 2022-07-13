@@ -43,8 +43,8 @@ parse filePath input = do
 
     parseModuleItem =
         TypeDefItem <$> located typeDef
-        <|> ConstDefItem <$> located constDef
-        <|> FnDefItem <$> located fnDef
+        <|> ConstDefItem <$> (located constDef <?> "constant definition")
+        <|> FnDefItem <$> (located fnDef <?> "function definition")
 
 type Parser = Parsec Void Text
 
@@ -55,25 +55,25 @@ located p = do
     pure (Located location result)
 
 typeDef :: Parser (TypeDef 'Unchecked)
-typeDef = structDef <|> enumDef
+typeDef = (structDef <?> "struct definition") <|> (enumDef <?> "enum definition")
   where
     structDef = do
         "struct" *> space1
-        n <- structName
-        ts <- parenthesized (commaSeparated typeName)
+        n <- structName <?> "struct name"
+        ts <- parenthesized (commaSeparated (typeName <?> "type name"))
         semicolon
         pure (StructDef n (Vector.fromList ts))
 
     enumDef = do
         "enum" *> space1
-        n <- parseEnumName
+        n <- parseEnumName <?> "enum name"
         vs <- withinBraces (commaSeparated (located enumVariant))
         pure (UncheckedEnumDef n vs)
 
 enumVariant :: Parser (EnumVariant 'Unchecked)
 enumVariant = do
-    v <- parseEnumVariantName
-    ts <- parenthesized (commaSeparated typeName)
+    v <- parseEnumVariantName <?> "enum variant name"
+    ts <- parenthesized (commaSeparated (typeName <?> "type name"))
     pure (EnumVariant v (Vector.fromList ts))
 
 fnDef :: Parser (FnDef 'Unchecked)
@@ -93,15 +93,15 @@ fnDecl = do
 
 fnArg :: Parser (FnArg 'Unchecked)
 fnArg = do
-    an <- located valueName
+    an <- located valueName <?> "argument name"
     colon
-    at <- typeName
+    at <- typeName <?> "argument type"
     pure (UncheckedFnArg an at)
 
 block :: Parser (Block 'Unchecked)
 block = withinBraces $ do
-    ss <- many (located (Parser.try statement))
-    e <- located expr
+    ss <- many (located (Parser.try statement) <?> "statement")
+    e <- located expr <?> "expression"
     pure (UncheckedBlock (Vector.fromList ss) e)
 
 statement :: Parser (Statement 'Unchecked)
@@ -111,20 +111,20 @@ statement = letStatement <|> exprStatement
         "let" *> space1
         p <- pattern
         equal
-        e <- expr
+        e <- expr <?> "expression"
         semicolon
         pure (UncheckedLetStatement p e)
 
-    exprStatement = UncheckedExprStatement <$> expr <* semicolon
+    exprStatement = UncheckedExprStatement <$> (expr <?> "expression") <* semicolon
 
 pattern :: Parser (Pattern 'Unchecked)
-pattern = varPattern <|> structPattern
+pattern = (varPattern <?> "variable") <|> (structPattern <?> "struct pattern")
   where
     varPattern = UncheckedVarPattern <$> located valueName
 
     structPattern = do
-        n <- located structName
-        vs <- located (parenthesized (commaSeparated (located valueName)))
+        n <- located structName <?> "struct name"
+        vs <- located (parenthesized (commaSeparated (located valueName <?> "variable")))
         pure (UncheckedStructPattern n (Vector.fromList <$> vs))
 
 expr :: Parser (Expr 'Unchecked)
@@ -133,13 +133,16 @@ expr =
     <|> UncheckedExprWithoutBlock <$> located exprWithoutBlock
 
 exprWithBlock :: Parser (ExprWithBlock 'Unchecked)
-exprWithBlock = blockExpr <|> ifExpr <|> matchExpr
+exprWithBlock =
+    (blockExpr <?> "block expression")
+    <|> (ifExpr <?> "`if` expression")
+    <|> (matchExpr <?> "`match` expression")
   where
     blockExpr = BlockExpr <$> block
 
     ifExpr = do
         "if" *> space1
-        e <- located exprWithoutBlock
+        e <- located exprWithoutBlock <?> "expression"
         b0 <- block
         "else" *> space1
         b1 <- block
@@ -148,48 +151,48 @@ exprWithBlock = blockExpr <|> ifExpr <|> matchExpr
     matchExpr = do
         "match" *> space1
         location <- Location <$> Parser.getOffset
-        e <- located exprWithoutBlock
-        as <- withinBraces (commaSeparated matchArm)
+        e <- located exprWithoutBlock <?> "expression"
+        as <- withinBraces (commaSeparated (matchArm <?> "`match` arm"))
         pure (UncheckedMatchExpr location e as)
 
 matchArm :: Parser (MatchArm 'Unchecked)
 matchArm = do
-    n <- located parseEnumName
+    n <- located parseEnumName <?> "enum name"
     "::" *> space
-    v <- located parseEnumVariantName
-    xs <- located (parenthesized (commaSeparated (located valueName)))
+    v <- located parseEnumVariantName <?> "enum variant name"
+    xs <- located (parenthesized (commaSeparated (located valueName <?> "variable")))
     "=>" *> space
-    e <- expr
+    e <- expr <?> "expression"
     pure (UncheckedMatchArm n v (Vector.fromList <$> xs) e)
 
 exprWithoutBlock :: Parser (ExprWithoutBlock 'Unchecked)
 exprWithoutBlock = makeExprParser term ops
   where
     term =
-        Parser.try litExpr
-        <|> parenthesized exprWithoutBlock
-        <|> Parser.try callExpr
-        <|> Parser.try printExpr
-        <|> varExpr
-        <|> Parser.try enumExpr
-        <|> Parser.try structExpr
-        <|> constExpr
+        (Parser.try litExpr <?> "literal expression")
+        <|> (parenthesized exprWithoutBlock <?> "parenthesized expression")
+        <|> (Parser.try callExpr <?> "call expression")
+        <|> (Parser.try printExpr <?> "`print!` expression")
+        <|> (varExpr <?> "variable")
+        <|> (Parser.try enumExpr <?> "enum expression")
+        <|> (Parser.try structExpr <?> "struct expression")
+        <|> (constExpr <?> "constant")
 
     litExpr = LitExpr <$> lit
 
     callExpr = do
-        n <- located valueName
-        es <- located (parenthesized (commaSeparated exprWithoutBlock))
+        n <- located valueName <?> "function name"
+        es <- located (parenthesized (commaSeparated exprWithoutBlock <?> "function argument"))
         pure (UncheckedCallExpr n (Vector.fromList <$> es))
 
-    varExpr = UncheckedVarExpr <$> located valueName
+    varExpr = UncheckedVarExpr <$> (located valueName <?> "variable")
 
     printExpr = do
         "print" *> space
         Parser.char '!' *> space
         (f, es) <- parenthesized $ do
-            f <- formatString
-            es <- many (comma *> located exprWithoutBlock)
+            f <- formatString <?> "format string"
+            es <- many (comma *> (located exprWithoutBlock <?> "format string argument"))
             pure (f, es)
         pure (UncheckedPrintExpr f es)
       where
@@ -224,18 +227,18 @@ exprWithoutBlock = makeExprParser term ops
         hole = ("{" *> space *> "}") $> Hole
 
     enumExpr = do
-        n <- located parseEnumName
+        n <- located parseEnumName <?> "enum name"
         "::" *> space
-        v <- located parseEnumVariantName
-        es <- located (parenthesized (commaSeparated exprWithoutBlock))
+        v <- located parseEnumVariantName <?> "enum variant name"
+        es <- located (parenthesized (commaSeparated exprWithoutBlock <?> "expression"))
         pure (UncheckedEnumExpr n v (Vector.fromList <$> es))
 
     structExpr = do
-        n <- located structName
-        es <- located (parenthesized (commaSeparated exprWithoutBlock))
+        n <- located structName <?> "struct name"
+        es <- located (parenthesized (commaSeparated exprWithoutBlock <?> "expression"))
         pure (UncheckedStructExpr n (Vector.fromList <$> es))
 
-    constExpr = UncheckedConstExpr <$> located constName
+    constExpr = UncheckedConstExpr <$> (located constName <?> "constant")
 
     ops =
         [
@@ -294,7 +297,11 @@ decimal :: Parser Integer
 decimal = Text.Megaparsec.Char.Lexer.decimal
 
 lit :: Parser Lit
-lit = unitLit <|> boolLit <|> Parser.try f64Lit <|> i64Lit
+lit =
+    (unitLit <?> "`()` literal")
+    <|> (boolLit <?> "`bool` literal")
+    <|> (Parser.try f64Lit <?> "`f64` literal")
+    <|> (i64Lit <?> "`i64` literal")
   where
     unitLit = (Parser.char '(' *> space *> Parser.char ')' *> space) $> UnitLit ()
 
@@ -317,15 +324,19 @@ lit = unitLit <|> boolLit <|> Parser.try f64Lit <|> i64Lit
 constDef :: Parser (ConstDef 'Unchecked)
 constDef = do
     "const" *> space1
-    x <- constName
+    x <- constName <?> "constant name"
     colon
-    t <- typeName
+    t <- typeName <?> "constant type"
     equal
-    c <- located constInit
+    c <- located constInit <?> "constant initializer"
     semicolon
     pure (UncheckedConstDef (ConstDecl x t) c)
   where
-    constInit = litInit <|> negLitInit <|> Parser.try structInit <|> enumInit
+    constInit =
+        (litInit <?> "literal")
+        <|> (negLitInit <?> "negative literal")
+        <|> (Parser.try structInit <?> "struct initializer")
+        <|> (enumInit <?> "enum initializer")
 
     litInit = LitInit <$> lit
 
@@ -335,22 +346,22 @@ constDef = do
        pure (UncheckedNegLitInit l)
 
     structInit = do
-        n <- located structName
-        cs <- located (parenthesized (commaSeparated constInit))
+        n <- located structName <?> "struct name"
+        cs <- located (parenthesized (commaSeparated constInit <?> "constant initializer"))
         pure (UncheckedStructInit n (Vector.fromList <$> cs))
 
     enumInit = do
-        n <- located parseEnumName
+        n <- located parseEnumName <?> "enum name"
         "::" *> space
-        v <- located parseEnumVariantName
-        cs <- located (parenthesized (commaSeparated constInit))
+        v <- located parseEnumVariantName <?> "enum variant name"
+        cs <- located (parenthesized (commaSeparated constInit <?> "constant initializer"))
         pure (UncheckedEnumInit n v (Vector.fromList <$> cs))
 
 isEndOfLine :: Char -> Bool
 isEndOfLine c = c == '\n' || c == '\r'
 
 comment :: Parser ()
-comment = Parser.hidden ("//" *> Parser.takeWhileP (Just "any non-EOL character") (not . isEndOfLine) *> Parser.space)
+comment = Parser.hidden ("//" *> Parser.takeWhileP Nothing (not . isEndOfLine) *> Parser.space)
 
 space :: Parser ()
 space = Parser.hidden (Parser.space *> Parser.skipMany comment)
@@ -394,10 +405,7 @@ isIdentifierContinuation :: Char -> Bool
 isIdentifierContinuation c = isAscii c && (isAlphaNum c || c == '_')
 
 identifierContinuation :: Parser Text
-identifierContinuation =
-    Parser.takeWhileP
-        (Just "identifier continuation character")
-        isIdentifierContinuation
+identifierContinuation = Parser.takeWhileP Nothing isIdentifierContinuation
 
 lowerIdentifier :: Parser Text
 lowerIdentifier = do
@@ -414,10 +422,7 @@ upperIdentifier = do
     pure (Text.cons a s)
 
 constNameContinuation :: Parser Text
-constNameContinuation =
-    Parser.takeWhileP
-        (Just "constant name continuation character")
-        (\c -> isAsciiUpper c || isDigit c || c == '_')
+constNameContinuation = Parser.takeWhileP Nothing (\c -> isAsciiUpper c || isDigit c || c == '_')
 
 constName :: Parser Text
 constName = do
