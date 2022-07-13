@@ -185,7 +185,7 @@ exprWithoutBlock = makeExprParser term ops
     varExpr = UncheckedVarExpr <$> located valueName
 
     printExpr = do
-        void "print"
+        "print" *> space
         Parser.char '!' *> space
         (f, es) <- parenthesized $ do
             f <- formatString
