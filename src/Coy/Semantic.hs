@@ -640,8 +640,8 @@ checkStatement = \case
 
 checkExpr :: Expr 'Unchecked -> Semantic (Expr 'Checked, Type 'Checked)
 checkExpr = \case
-    UncheckedExprWithBlock e -> fmap (first CheckedExprWithBlock) (checkExprWithBlock e)
-    UncheckedExprWithoutBlock e -> fmap (first CheckedExprWithoutBlock) (checkExprWithoutBlock (unpack e))
+    UncheckedExprWithBlock e -> checkExprWithBlock e
+    UncheckedExprWithoutBlock e -> checkExprWithoutBlock (unpack e)
 
 histogram :: Ord a => [a] -> Map a Int
 histogram = Map.fromListWith (+) . fmap (, 1)
@@ -649,9 +649,9 @@ histogram = Map.fromListWith (+) . fmap (, 1)
 occurrences :: Ord a => a -> Map a Int -> Int
 occurrences = Map.findWithDefault 0
 
-checkExprWithBlock :: ExprWithBlock 'Unchecked -> Semantic (ExprWithBlock 'Checked, Type 'Checked)
+checkExprWithBlock :: UncheckedExprWithBlock -> Semantic (Expr 'Checked, Type 'Checked)
 checkExprWithBlock = \case
-    BlockExpr b -> fmap (first BlockExpr) (checkBlock b)
+    UncheckedBlockExpr b -> fmap (first CheckedBlockExpr) (checkBlock b)
     UncheckedIfExpr e b0 b1 -> do
         (e', t) <- checkExprWithoutBlock (unpack e)
         when (t /= Bool) (throwError (IfScrutineeTypeMismatch (locate e) t))
@@ -705,9 +705,9 @@ checkExprWithBlock = \case
                         sortedCheckedMatchArms = fmap (fst . snd) (sortOn fst checkedMatchArms)
             _ -> throwError (MatchScrutineeTypeMismatch (locate e0) t0)
 
-checkExprWithoutBlock :: ExprWithoutBlock 'Unchecked -> Semantic (ExprWithoutBlock 'Checked, Type 'Checked)
+checkExprWithoutBlock :: UncheckedExprWithoutBlock -> Semantic (Expr 'Checked, Type 'Checked)
 checkExprWithoutBlock = \case
-    LitExpr l -> pure (LitExpr l, litType l)
+    UncheckedLitExpr l -> pure (CheckedLitExpr l, litType l)
     UncheckedVarExpr x -> do
         t <- findValue x
         pure (CheckedVarExpr (unpack x) t, t)

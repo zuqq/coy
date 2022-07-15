@@ -164,13 +164,80 @@ deriving instance Ord (Pattern u)
 deriving instance Show (Pattern u)
 
 data Expr (u :: Status) where
-    UncheckedExprWithBlock :: ExprWithBlock 'Unchecked -> Expr 'Unchecked
+    UncheckedExprWithBlock :: UncheckedExprWithBlock -> Expr 'Unchecked
 
-    CheckedExprWithBlock :: ExprWithBlock 'Checked -> Expr 'Checked
+    UncheckedExprWithoutBlock :: Located UncheckedExprWithoutBlock -> Expr 'Unchecked
 
-    UncheckedExprWithoutBlock :: Located (ExprWithoutBlock 'Unchecked) -> Expr 'Unchecked
+    CheckedBlockExpr :: Block 'Checked -> Expr 'Checked
 
-    CheckedExprWithoutBlock :: ExprWithoutBlock 'Checked -> Expr 'Checked
+    CheckedIfExpr
+        :: Expr 'Checked
+        -> Block 'Checked
+        -> Block 'Checked
+        -> Expr 'Checked
+
+    CheckedMatchExpr
+        :: Expr 'Checked
+        -- ^ Scrutinee.
+        -> Text
+        -- ^ Name of the enum.
+        -> [MatchArm 'Checked]
+        -- ^ Match arms, ordered by variant.
+        -> Expr 'Checked
+
+    CheckedLitExpr :: Lit -> Expr 'Checked
+
+    CheckedVarExpr :: Text -> Type 'Checked -> Expr 'Checked
+
+    CheckedConstExpr :: Text -> Type 'Checked -> Expr 'Checked
+
+    CheckedUnaryOpExpr
+        :: UnaryOp 'Checked
+        -- ^ The unary operator.
+        -> Expr 'Checked
+        -- ^ Argument.
+        -> Expr 'Checked
+
+    CheckedBinaryOpExpr
+        :: BinaryOp 'Checked
+        -- ^ The binary operator.
+        -> Expr 'Checked
+        -- ^ First argument.
+        -> Expr 'Checked
+        -- ^ Second argument.
+        -> Expr 'Checked
+
+    CheckedCallExpr
+        :: Text
+        -- ^ Name of the function.
+        -> Vector (Expr 'Checked)
+        -- ^ Arguments.
+        -> Type 'Checked
+        -- ^ Return type.
+        -> Expr 'Checked
+
+    CheckedStructExpr
+        :: Text
+        -- ^ Name of the struct.
+        -> Vector (Expr 'Checked, Type 'Checked)
+        -- ^ Arguments with their types.
+        -> Expr 'Checked
+
+    CheckedEnumExpr
+        :: Text
+        -- ^ Name of the enum.
+        -> Int
+        -- ^ Index of the enum variant.
+        -> Vector (Expr 'Checked, Type 'Checked)
+        -- ^ Arguments with their types.
+        -> Expr 'Checked
+
+    CheckedPrintExpr
+        :: FormatString 'Checked
+        -- ^ The format string.
+        -> [Expr 'Checked]
+        -- ^ Arguments.
+        -> Expr 'Checked
 
 deriving instance Eq (Expr u)
 deriving instance Ord (Expr u)
@@ -181,52 +248,30 @@ locateExpr = \case
     UncheckedExprWithBlock e -> locateExprWithBlock e
     UncheckedExprWithoutBlock e -> locate e
 
-data ExprWithBlock (u :: Status) where
-    BlockExpr :: Block u -> ExprWithBlock u
-
-    UncheckedIfExpr
-        :: Located (ExprWithoutBlock 'Unchecked)
-        -> Block 'Unchecked
-        -> Block 'Unchecked
-        -> ExprWithBlock 'Unchecked
-
-    CheckedIfExpr
-        :: ExprWithoutBlock 'Checked
-        -> Block 'Checked
-        -> Block 'Checked
-        -> ExprWithBlock 'Checked
-
-    UncheckedMatchExpr
-        :: Location
+data UncheckedExprWithBlock
+    = UncheckedBlockExpr (Block 'Unchecked)
+    | UncheckedIfExpr
+        (Located UncheckedExprWithoutBlock)
+        (Block 'Unchecked)
+        (Block 'Unchecked)
+    | UncheckedMatchExpr
+        Location
         -- ^ Start.
-        -> Located (ExprWithoutBlock 'Unchecked)
+        (Located UncheckedExprWithoutBlock)
         -- ^ Scrutinee.
-        -> [MatchArm 'Unchecked]
+        [MatchArm 'Unchecked]
         -- ^ Match arms.
-        -> ExprWithBlock 'Unchecked
-
-    CheckedMatchExpr
-        :: ExprWithoutBlock 'Checked
-        -- ^ Scrutinee.
-        -> Text
-        -- ^ Name of the enum.
-        -> [MatchArm 'Checked]
-        -- ^ Match arms, ordered by variant.
-        -> ExprWithBlock 'Checked
+    deriving (Eq, Ord, Show)
 
 -- Special treatment for expressions that are wrapped in a block, in order to
 -- point at the expression that determines the block's type, not the block
 -- itself.
-locateExprWithBlock :: ExprWithBlock 'Unchecked -> Location
+locateExprWithBlock :: UncheckedExprWithBlock -> Location
 locateExprWithBlock = \case
-    BlockExpr b -> locateBlock b
+    UncheckedBlockExpr b -> locateBlock b
     UncheckedIfExpr _ b0 _ -> locateBlock b0
     UncheckedMatchExpr location _ [] -> location
     UncheckedMatchExpr _ _ (UncheckedMatchArm n _ _ _ : _) -> locate n
-
-deriving instance Eq (ExprWithBlock u)
-deriving instance Ord (ExprWithBlock u)
-deriving instance Show (ExprWithBlock u)
 
 data MatchArm (u :: Status) where
     UncheckedMatchArm
@@ -251,114 +296,45 @@ deriving instance Eq (MatchArm u)
 deriving instance Ord (MatchArm u)
 deriving instance Show (MatchArm u)
 
-data ExprWithoutBlock (u :: Status) where
-    LitExpr :: Lit -> ExprWithoutBlock u
-
-    UncheckedVarExpr :: Located Text -> ExprWithoutBlock 'Unchecked
-
-    CheckedVarExpr :: Text -> Type 'Checked -> ExprWithoutBlock 'Checked
-
-    UncheckedConstExpr :: Located Text -> ExprWithoutBlock 'Unchecked
-
-    CheckedConstExpr :: Text -> Type 'Checked -> ExprWithoutBlock 'Checked
-
-    UncheckedUnaryOpExpr
-        :: Located (UnaryOp 'Unchecked)
+data UncheckedExprWithoutBlock
+    = UncheckedLitExpr Lit
+    | UncheckedVarExpr (Located Text)
+    | UncheckedConstExpr (Located Text)
+    | UncheckedUnaryOpExpr
+        (Located (UnaryOp 'Unchecked))
         -- ^ The unary operator.
-        -> ExprWithoutBlock 'Unchecked
+        UncheckedExprWithoutBlock
         -- ^ Argument.
-        -> ExprWithoutBlock 'Unchecked
-
-    CheckedUnaryOpExpr
-        :: UnaryOp 'Checked
-        -- ^ The unary operator.
-        -> ExprWithoutBlock 'Checked
-        -- ^ Argument.
-        -> ExprWithoutBlock 'Checked
-
-    UncheckedBinaryOpExpr
-        :: Located (BinaryOp 'Unchecked)
+    | UncheckedBinaryOpExpr
+        (Located (BinaryOp 'Unchecked))
         -- ^ The binary operator.
-        -> ExprWithoutBlock 'Unchecked
+        UncheckedExprWithoutBlock
         -- ^ First argument.
-        -> ExprWithoutBlock 'Unchecked
+        UncheckedExprWithoutBlock
         -- ^ Second argument.
-        -> ExprWithoutBlock 'Unchecked
-
-    CheckedBinaryOpExpr
-        :: BinaryOp 'Checked
-        -- ^ The binary operator.
-        -> ExprWithoutBlock 'Checked
-        -- ^ First argument.
-        -> ExprWithoutBlock 'Checked
-        -- ^ Second argument.
-        -> ExprWithoutBlock 'Checked
-
-    UncheckedCallExpr
-        :: Located Text
+    | UncheckedCallExpr
+        (Located Text)
         -- ^ Name of the function.
-        -> Located (Vector (ExprWithoutBlock 'Unchecked))
+        (Located (Vector UncheckedExprWithoutBlock))
         -- ^ Arguments.
-        -> ExprWithoutBlock 'Unchecked
-
-    CheckedCallExpr
-        :: Text
-        -- ^ Name of the function.
-        -> Vector (ExprWithoutBlock 'Checked)
-        -- ^ Arguments.
-        -> Type 'Checked
-        -- ^ Return type.
-        -> ExprWithoutBlock 'Checked
-
-    UncheckedStructExpr
-        :: Located Text
+    | UncheckedStructExpr
+        (Located Text)
         -- ^ Name of the struct.
-        -> Located (Vector (ExprWithoutBlock 'Unchecked))
+        (Located (Vector UncheckedExprWithoutBlock))
         -- ^ Arguments.
-        -> ExprWithoutBlock 'Unchecked
-
-    CheckedStructExpr
-        :: Text
-        -- ^ Name of the struct.
-        -> Vector (ExprWithoutBlock 'Checked, Type 'Checked)
-        -- ^ Arguments with their types.
-        -> ExprWithoutBlock 'Checked
-
-    UncheckedEnumExpr
-        :: Located Text
+    | UncheckedEnumExpr
+        (Located Text)
         -- ^ Name of the enum.
-        -> Located Text
+        (Located Text)
         -- ^ Name of the enum variant.
-        -> Located (Vector (ExprWithoutBlock 'Unchecked))
+        (Located (Vector UncheckedExprWithoutBlock))
         -- ^ Arguments.
-        -> ExprWithoutBlock 'Unchecked
-
-    CheckedEnumExpr
-        :: Text
-        -- ^ Name of the enum.
-        -> Int
-        -- ^ Index of the enum variant.
-        -> Vector (ExprWithoutBlock 'Checked, Type 'Checked)
-        -- ^ Arguments with their types.
-        -> ExprWithoutBlock 'Checked
-
-    UncheckedPrintExpr
-        :: FormatString 'Unchecked
+    | UncheckedPrintExpr
+        (FormatString 'Unchecked)
         -- ^ The format string.
-        -> [Located (ExprWithoutBlock 'Unchecked)]
+        [Located UncheckedExprWithoutBlock]
         -- ^ Arguments.
-        -> ExprWithoutBlock 'Unchecked
-
-    CheckedPrintExpr
-        :: FormatString 'Checked
-        -- ^ The format string.
-        -> [ExprWithoutBlock 'Checked]
-        -- ^ Arguments.
-        -> ExprWithoutBlock 'Checked
-
-deriving instance Eq (ExprWithoutBlock u)
-deriving instance Ord (ExprWithoutBlock u)
-deriving instance Show (ExprWithoutBlock u)
+    deriving (Eq, Ord, Show)
 
 data Lit
     = UnitLit ()

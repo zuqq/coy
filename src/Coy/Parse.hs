@@ -138,13 +138,13 @@ expr =
     UncheckedExprWithBlock <$> exprWithBlock
     <|> UncheckedExprWithoutBlock <$> located exprWithoutBlock
 
-exprWithBlock :: Parser (ExprWithBlock 'Unchecked)
+exprWithBlock :: Parser UncheckedExprWithBlock
 exprWithBlock =
     (blockExpr <?> "block expression")
     <|> (ifExpr <?> "`if` expression")
     <|> (matchExpr <?> "`match` expression")
   where
-    blockExpr = BlockExpr <$> block
+    blockExpr = UncheckedBlockExpr <$> block
 
     ifExpr = do
         Parser.try ("if" *> space1)
@@ -171,7 +171,7 @@ matchArm = do
     e <- expr <?> "expression"
     pure (UncheckedMatchArm n v (Vector.fromList <$> xs) e)
 
-exprWithoutBlock :: Parser (ExprWithoutBlock 'Unchecked)
+exprWithoutBlock :: Parser UncheckedExprWithoutBlock
 exprWithoutBlock = makeExprParser term operators
   where
     term =
@@ -184,7 +184,7 @@ exprWithoutBlock = makeExprParser term operators
         <|> (structExpr <?> "struct expression")
         <|> (constExpr <?> "constant")
 
-    litExpr = LitExpr <$> lit
+    litExpr = UncheckedLitExpr <$> lit
 
     callExpr = do
         (n, location) <- Parser.try startCallExpr

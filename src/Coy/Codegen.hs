@@ -446,14 +446,14 @@ copyToReturnArg src0 t' = copyTo returnArg src0 t'
 constructStruct
     :: Text
     -- ^ Name of the struct.
-    -> Vector (ExprWithoutBlock 'Checked, Type 'Checked)
+    -> Vector (Expr 'Checked, Type 'Checked)
     -- ^ Values for the components with their types.
     -> IRBuilder LLVM.AST.Operand
 constructStruct n ets = do
     p <- LLVM.IRBuilder.alloca (reifyStruct n) Nothing 0
     Vector.iforM_ ets \i (e, at) -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral i)]
-        a <- exprWithoutBlock e
+        a <- expr e
         if hasPointerOperandType at then
             copyTo q a (reifyType at)
         else
@@ -465,7 +465,7 @@ constructEnumVariant
     -- ^ Name of the enum.
     -> Int
     -- ^ Index of the enum variant.
-    -> Vector (ExprWithoutBlock 'Checked, Type 'Checked)
+    -> Vector (Expr 'Checked, Type 'Checked)
     -- ^ Values for the components with their types.
     -> IRBuilder LLVM.AST.Operand
 constructEnumVariant n i ets = do
@@ -475,7 +475,7 @@ constructEnumVariant n i ets = do
     p <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr (reifyEnum n (Just i)))
     Vector.iforM_ ets \k (e, at) -> do
         q <- LLVM.IRBuilder.gep p [index 0, index (fromIntegral k + 1)]
-        a <- exprWithoutBlock e
+        a <- expr e
         if hasPointerOperandType at then
             copyTo q a (reifyType at)
         else
@@ -533,14 +533,9 @@ statement = \case
 
 expr :: Expr 'Checked -> IRBuilder LLVM.AST.Operand
 expr = \case
-    CheckedExprWithBlock e -> exprWithBlock e
-    CheckedExprWithoutBlock e -> exprWithoutBlock e
-
-exprWithBlock :: ExprWithBlock 'Checked -> IRBuilder LLVM.AST.Operand
-exprWithBlock = \case
-    BlockExpr b -> namespaced (block b)
+    CheckedBlockExpr b -> namespaced (block b)
     CheckedIfExpr e thenBlock elseBlock -> mdo
-        a <- exprWithoutBlock e
+        a <- expr e
         LLVM.IRBuilder.condBr a thenInLabel elseInLabel
 
         thenInLabel <- LLVM.IRBuilder.block
@@ -562,9 +557,9 @@ exprWithBlock = \case
     -- The code path for `match` expressions with at least one arm uses a phi
     -- node, which requires a predecessor; therefore it is more convenient to
     -- fall into a completely different code path here.
-    CheckedMatchExpr _ _ [] -> exprWithoutBlock (LitExpr (UnitLit ()))
+    CheckedMatchExpr _ _ [] -> expr (CheckedLitExpr (UnitLit ()))
     CheckedMatchExpr e0 n as -> mdo
-        p0 <- exprWithoutBlock e0
+        p0 <- expr e0
         tagPointer <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr tagType)
         tagValue <- LLVM.IRBuilder.load tagPointer 0
         let outgoing = [(tagLit i, inLabel) | ((i, inLabel), _) <- branches]
@@ -586,20 +581,7 @@ exprWithBlock = \case
 
         joinLabel <- LLVM.IRBuilder.block
         LLVM.IRBuilder.phi (fmap snd branches)
-
-unitLit :: LLVM.AST.Constant.Constant
-unitLit = LLVM.AST.Constant.Struct (Just "unit") False mempty
-
-lit :: Lit -> LLVM.AST.Constant.Constant
-lit = \case
-    UnitLit () -> unitLit
-    BoolLit b -> LLVM.AST.Constant.Int 1 (if b then 1 else 0)
-    I64Lit x -> LLVM.AST.Constant.Int 64 x
-    F64Lit x -> LLVM.AST.Constant.Float (LLVM.AST.Float.Double x)
-
-exprWithoutBlock :: ExprWithoutBlock 'Checked -> IRBuilder LLVM.AST.Operand
-exprWithoutBlock = \case
-    LitExpr l -> pure (LLVM.AST.ConstantOperand (lit l))
+    CheckedLitExpr l -> pure (LLVM.AST.ConstantOperand (lit l))
     CheckedVarExpr x _ -> findValue x
     CheckedConstExpr x t -> do
         p <- findConst x
@@ -608,7 +590,7 @@ exprWithoutBlock = \case
             Enum _ -> LLVM.IRBuilder.bitcast p (LLVM.AST.Type.ptr (reifyType t))
             _ -> LLVM.IRBuilder.load p 0
     CheckedUnaryOpExpr o e -> do
-        a <- exprWithoutBlock e
+        a <- expr e
         let instruction =
                 case o of
                     Neg -> LLVM.IRBuilder.sub (LLVM.IRBuilder.int64 0)
@@ -618,8 +600,8 @@ exprWithoutBlock = \case
                     AsI64 -> flip LLVM.IRBuilder.fptosi LLVM.AST.Type.i64
         instruction a
     CheckedBinaryOpExpr o e0 e1 -> do
-        a0 <- exprWithoutBlock e0
-        a1 <- exprWithoutBlock e1
+        a0 <- expr e0
+        a1 <- expr e1
         let instruction =
                 case o of
                     Mul -> LLVM.IRBuilder.mul
@@ -660,7 +642,7 @@ exprWithoutBlock = \case
         instruction a0 a1
     CheckedCallExpr n es returnType -> do
         fn <- findFn n
-        as <- traverse exprWithoutBlock es
+        as <- traverse expr es
         let as' = [(a, mempty) | a <- toList as]
         if hasPointerOperandType returnType then do
             returnArg <- LLVM.IRBuilder.alloca (reifyType returnType) Nothing 0
@@ -672,9 +654,19 @@ exprWithoutBlock = \case
     CheckedEnumExpr n i ets -> constructEnumVariant n i ets
     CheckedPrintExpr (CheckedFormatString i) es -> do
         a0 <- findString i
-        as <- traverse exprWithoutBlock es
+        as <- traverse expr es
         void (LLVM.IRBuilder.call printf [(a, mempty) | a <- a0 : as])
         pure (LLVM.AST.ConstantOperand unitLit)
+
+unitLit :: LLVM.AST.Constant.Constant
+unitLit = LLVM.AST.Constant.Struct (Just "unit") False mempty
+
+lit :: Lit -> LLVM.AST.Constant.Constant
+lit = \case
+    UnitLit () -> unitLit
+    BoolLit b -> LLVM.AST.Constant.Int 1 (if b then 1 else 0)
+    I64Lit x -> LLVM.AST.Constant.Int 64 x
+    F64Lit x -> LLVM.AST.Constant.Float (LLVM.AST.Float.Double x)
 
 reifyConstInit :: ConstInit 'Checked -> LLVM.AST.Constant.Constant
 reifyConstInit = \case
@@ -700,20 +692,15 @@ tailBlock (CheckedBlock ss e) = do
     traverse_ statement ss
     tailExpr e
 
-tailExpr :: Expr 'Checked -> IRBuilder ()
-tailExpr = \case
-    CheckedExprWithBlock e -> tailExprWithBlock e
-    CheckedExprWithoutBlock e -> tailExprWithoutBlock e
-
 -- Instead of joining the branches by introducing a phi node and then returning,
 -- we return separately in each branch. This has the effect that function calls
 -- that are in tail position in the AST are also in tail position in the
 -- generated LLVM IR.
-tailExprWithBlock :: ExprWithBlock 'Checked -> IRBuilder ()
-tailExprWithBlock = \case
-    BlockExpr b -> namespaced (tailBlock b)
+tailExpr :: Expr 'Checked -> IRBuilder ()
+tailExpr = \case
+    CheckedBlockExpr b -> namespaced (tailBlock b)
     CheckedIfExpr e thenBlock elseBlock -> mdo
-        a <- exprWithoutBlock e
+        a <- expr e
         LLVM.IRBuilder.condBr a thenLabel elseLabel
 
         thenLabel <- LLVM.IRBuilder.block
@@ -722,7 +709,7 @@ tailExprWithBlock = \case
         elseLabel <- LLVM.IRBuilder.block
         namespaced (tailBlock elseBlock)
     CheckedMatchExpr e0 n as -> mdo
-        p0 <- exprWithoutBlock e0
+        p0 <- expr e0
         tagPointer <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr tagType)
         tagValue <- LLVM.IRBuilder.load tagPointer 0
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
@@ -736,11 +723,8 @@ tailExprWithBlock = \case
 
         defaultLabel <- LLVM.IRBuilder.block
         LLVM.IRBuilder.unreachable
-
-tailExprWithoutBlock :: ExprWithoutBlock 'Checked -> IRBuilder ()
-tailExprWithoutBlock = \case
     e@(CheckedVarExpr _ t) -> do
-        result <- exprWithoutBlock e
+        result <- expr e
         if hasPointerOperandType t then do
             copyToReturnArg result (reifyType t)
             LLVM.IRBuilder.retVoid
@@ -762,7 +746,7 @@ tailExprWithoutBlock = \case
                 LLVM.IRBuilder.ret result
     CheckedCallExpr n es returnType -> do
         fn <- findFn n
-        as <- traverse exprWithoutBlock es
+        as <- traverse expr es
         let as' = [(a, mempty) | a <- toList as]
         if hasPointerOperandType returnType then do
             -- We know that the return type of the callee is equal to the return
@@ -774,13 +758,13 @@ tailExprWithoutBlock = \case
             result <- LLVM.IRBuilder.call fn as'
             LLVM.IRBuilder.ret result
     e@(CheckedStructExpr n _) -> do
-        result <- exprWithoutBlock e
+        result <- expr e
         copyToReturnArg result (reifyStruct n)
         LLVM.IRBuilder.retVoid
     e@(CheckedEnumExpr n _ _) -> do
-        result <- exprWithoutBlock e
+        result <- expr e
         copyToReturnArg result (reifyEnum n Nothing)
         LLVM.IRBuilder.retVoid
     e -> do
-        result <- exprWithoutBlock e
+        result <- expr e
         LLVM.IRBuilder.ret result
