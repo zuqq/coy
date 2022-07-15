@@ -693,7 +693,7 @@ checkExprWithBlock = \case
                     Just actual -> throwError (MatchArmEnumVariantsMissing (locate e0) n0 actual)
 
                 case checkedMatchArms of
-                    [] -> pure (CheckedMatchExpr e0' n0 [], Unit)
+                    [] -> pure (CheckedMatchExpr e0' n0 mempty, Unit)
                     (_, (_, Located _ expected)) : _
                         | Located location actual : _ <- otherResultTypes -> throwError (MatchArmResultTypeMismatch location actual expected)
                         | otherwise -> pure (CheckedMatchExpr e0' n0 sortedCheckedMatchArms, expected)
