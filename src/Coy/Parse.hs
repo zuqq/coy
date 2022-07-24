@@ -190,7 +190,7 @@ exprWithoutBlock = makeExprParser term ops
         <|> (printExpr <?> "`print!` expression")
         <|> (varExpr <?> "variable")
         <|> (enumExpr <?> "enum expression")
-        <|> (Parser.try structExpr <?> "struct expression")
+        <|> (structExpr <?> "struct expression")
         <|> (constExpr <?> "constant")
 
     litExpr = LitExpr <$> lit
@@ -262,9 +262,16 @@ exprWithoutBlock = makeExprParser term ops
             pure (n, v, location)
 
     structExpr = do
-        n <- located structName <?> "struct name"
-        es <- located (parenthesized (commaSeparated exprWithoutBlock <?> "expression"))
-        pure (UncheckedStructExpr n (Vector.fromList <$> es))
+        (n, location) <- Parser.try startStructExpr
+        es <- commaSeparated (exprWithoutBlock <?> "expression")
+        Parser.char ')' *> space
+        pure (UncheckedStructExpr n (Located location (Vector.fromList es)))
+      where
+        startStructExpr = do
+            n <- located structName <?> "struct name"
+            location <- Location <$> Parser.getOffset
+            Parser.char '(' *> space
+            pure (n, location)
 
     constExpr = UncheckedConstExpr <$> (located constName <?> "constant")
 
