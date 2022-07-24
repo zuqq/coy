@@ -283,7 +283,7 @@ exprWithoutBlock = makeExprParser term ops
                 Prefix (UncheckedUnaryOpExpr . ($> Not) <$> located (symbol "!"))
             ],
             [
-                Postfix (UncheckedUnaryOpExpr . (As <$>) <$> located (symbol "as" *> typeName))
+                Postfix (UncheckedUnaryOpExpr . (As <$>) <$> located ("as" *> space1 *> typeName))
             ],
             [
                 InfixL (UncheckedBinaryOpExpr . ($> Mul) <$> located (symbol "*")),
