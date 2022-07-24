@@ -187,7 +187,7 @@ exprWithoutBlock = makeExprParser term ops
         (litExpr <?> "literal expression")
         <|> (parenthesized exprWithoutBlock <?> "parenthesized expression")
         <|> (callExpr <?> "call expression")
-        <|> (Parser.try printExpr <?> "`print!` expression")
+        <|> (printExpr <?> "`print!` expression")
         <|> (varExpr <?> "variable")
         <|> (Parser.try enumExpr <?> "enum expression")
         <|> (Parser.try structExpr <?> "struct expression")
@@ -210,8 +210,7 @@ exprWithoutBlock = makeExprParser term ops
     varExpr = UncheckedVarExpr <$> (located valueName <?> "variable")
 
     printExpr = do
-        "print" *> space
-        Parser.char '!' *> space
+        Parser.try ("print" *> space *> Parser.char '!' *> space)
         (f, es) <- parenthesized $ do
             f <- formatString <?> "format string"
             es <- many (comma *> (located exprWithoutBlock <?> "format string argument"))
