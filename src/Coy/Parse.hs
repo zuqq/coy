@@ -210,11 +210,10 @@ exprWithoutBlock = makeExprParser term ops
     varExpr = UncheckedVarExpr <$> (located valueName <?> "variable")
 
     printExpr = do
-        Parser.try ("print" *> space *> Parser.char '!' *> space)
-        (f, es) <- parenthesized $ do
-            f <- formatString <?> "format string"
-            es <- many (comma *> (located exprWithoutBlock <?> "format string argument"))
-            pure (f, es)
+        Parser.try ("print" *> space *> Parser.char '!' *> space *> Parser.char '(' *> space)
+        f <- formatString <?> "format string"
+        es <- many (comma *> (located exprWithoutBlock <?> "format string argument"))
+        Parser.char ')' *> space
         pure (UncheckedPrintExpr f es)
       where
         formatString = do
