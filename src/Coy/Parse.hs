@@ -186,7 +186,7 @@ exprWithoutBlock = makeExprParser term ops
     term =
         (litExpr <?> "literal expression")
         <|> (parenthesized exprWithoutBlock <?> "parenthesized expression")
-        <|> (Parser.try callExpr <?> "call expression")
+        <|> (callExpr <?> "call expression")
         <|> (Parser.try printExpr <?> "`print!` expression")
         <|> (varExpr <?> "variable")
         <|> (Parser.try enumExpr <?> "enum expression")
@@ -196,9 +196,16 @@ exprWithoutBlock = makeExprParser term ops
     litExpr = LitExpr <$> lit
 
     callExpr = do
-        n <- located valueName <?> "function name"
-        es <- located (parenthesized (commaSeparated exprWithoutBlock <?> "function argument"))
-        pure (UncheckedCallExpr n (Vector.fromList <$> es))
+        (n, location) <- Parser.try startCallExpr
+        es <- commaSeparated (exprWithoutBlock <?> "function argument")
+        Parser.char ')' *> space
+        pure (UncheckedCallExpr n (Located location (Vector.fromList es)))
+      where
+        startCallExpr = do
+            n <- located valueName <?> "function name"
+            location <- Location <$> Parser.getOffset
+            Parser.char '(' *> space
+            pure (n, location)
 
     varExpr = UncheckedVarExpr <$> (located valueName <?> "variable")
 
