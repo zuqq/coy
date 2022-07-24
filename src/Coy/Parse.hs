@@ -367,17 +367,17 @@ constDef = do
     pure (UncheckedConstDef (ConstDecl x t) c)
   where
     constInit =
-        (litInit <?> "literal")
-        <|> (negLitInit <?> "negative literal")
+        (negLitInit <?> "negative literal")
+        <|> (litInit <?> "literal")
         <|> (enumInit <?> "enum initializer")
         <|> (structInit <?> "struct initializer")
-
-    litInit = LitInit <$> lit
 
     negLitInit = do
        Parser.char '-' *> space
        l <- located lit
        pure (UncheckedNegLitInit l)
+
+    litInit = LitInit <$> lit
 
     enumInit = do
         (n, v, location) <- Parser.try startEnumInit
