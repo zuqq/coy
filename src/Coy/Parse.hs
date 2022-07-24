@@ -189,7 +189,7 @@ exprWithoutBlock = makeExprParser term ops
         <|> (callExpr <?> "call expression")
         <|> (printExpr <?> "`print!` expression")
         <|> (varExpr <?> "variable")
-        <|> (Parser.try enumExpr <?> "enum expression")
+        <|> (enumExpr <?> "enum expression")
         <|> (Parser.try structExpr <?> "struct expression")
         <|> (constExpr <?> "constant")
 
@@ -248,11 +248,18 @@ exprWithoutBlock = makeExprParser term ops
         hole = ("{" *> space *> "}") $> Hole
 
     enumExpr = do
-        n <- located parseEnumName <?> "enum name"
-        "::" *> space
-        v <- located parseEnumVariantName <?> "enum variant name"
-        es <- located (parenthesized (commaSeparated exprWithoutBlock <?> "expression"))
-        pure (UncheckedEnumExpr n v (Vector.fromList <$> es))
+        (n, v, location) <- Parser.try startEnumExpr
+        es <- commaSeparated (exprWithoutBlock <?> "expression")
+        Parser.char ')' *> space
+        pure (UncheckedEnumExpr n v (Located location (Vector.fromList es)))
+      where
+        startEnumExpr = do
+            n <- located parseEnumName <?> "enum name"
+            "::" *> space
+            v <- located parseEnumVariantName <?> "enum variant name"
+            location <- Location <$> Parser.getOffset
+            Parser.char '(' *> space
+            pure (n, v, location)
 
     structExpr = do
         n <- located structName <?> "struct name"
