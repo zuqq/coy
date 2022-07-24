@@ -107,9 +107,7 @@ block = do
     statements = do
         s <- located statement
         case unpack s of
-            UncheckedLetStatement _ _ -> do
-                semicolon
-                loop s
+            UncheckedLetStatement _ _ -> semicolon *> loop s
             UncheckedExprStatement e -> do
                 continue <- optional semicolon
                 case continue of
