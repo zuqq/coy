@@ -369,8 +369,8 @@ constDef = do
     constInit =
         (litInit <?> "literal")
         <|> (negLitInit <?> "negative literal")
-        <|> (Parser.try structInit <?> "struct initializer")
         <|> (enumInit <?> "enum initializer")
+        <|> (structInit <?> "struct initializer")
 
     litInit = LitInit <$> lit
 
@@ -379,17 +379,31 @@ constDef = do
        l <- located lit
        pure (UncheckedNegLitInit l)
 
-    structInit = do
-        n <- located structName <?> "struct name"
-        cs <- located (parenthesized (commaSeparated constInit <?> "constant initializer"))
-        pure (UncheckedStructInit n (Vector.fromList <$> cs))
-
     enumInit = do
-        n <- located parseEnumName <?> "enum name"
-        "::" *> space
-        v <- located parseEnumVariantName <?> "enum variant name"
-        cs <- located (parenthesized (commaSeparated constInit <?> "constant initializer"))
-        pure (UncheckedEnumInit n v (Vector.fromList <$> cs))
+        (n, v, location) <- Parser.try startEnumInit
+        cs <- commaSeparated (constInit <?> "constant initializer")
+        Parser.char ')' *> space
+        pure (UncheckedEnumInit n v (Located location (Vector.fromList cs)))
+      where
+        startEnumInit = do
+            n <- located parseEnumName <?> "enum name"
+            "::" *> space
+            v <- located parseEnumVariantName <?> "enum variant name"
+            location <- Location <$> Parser.getOffset
+            Parser.char '(' *> space
+            pure (n, v, location)
+
+    structInit = do
+        (n, location) <- Parser.try startStructInit
+        cs <- commaSeparated (constInit <?> "constant initializer")
+        Parser.char ')' *> space
+        pure (UncheckedStructInit n (Located location (Vector.fromList cs)))
+      where
+        startStructInit = do
+            n <- located structName <?> "struct name"
+            location <- Location <$> Parser.getOffset
+            Parser.char '(' *> space
+            pure (n, location)
 
 isEndOfLine :: Char -> Bool
 isEndOfLine c = c == '\n' || c == '\r'
