@@ -184,7 +184,7 @@ exprWithoutBlock :: Parser (ExprWithoutBlock 'Unchecked)
 exprWithoutBlock = makeExprParser term ops
   where
     term =
-        (Parser.try litExpr <?> "literal expression")
+        (litExpr <?> "literal expression")
         <|> (parenthesized exprWithoutBlock <?> "parenthesized expression")
         <|> (Parser.try callExpr <?> "call expression")
         <|> (Parser.try printExpr <?> "`print!` expression")
@@ -315,20 +315,19 @@ lit :: Parser Lit
 lit =
     (unitLit <?> "`()` literal")
     <|> (boolLit <?> "`bool` literal")
-    <|> (Parser.try f64Lit <?> "`f64` literal")
+    <|> (f64Lit <?> "`f64` literal")
     <|> (i64Lit <?> "`i64` literal")
   where
-    unitLit = (Parser.char '(' *> space *> Parser.char ')' *> space) $> UnitLit ()
+    unitLit = Parser.try (Parser.char '(' *> space *> Parser.char ')' *> space) $> UnitLit ()
 
     boolLit = BoolLit <$> (true $> True <|> false $> False) <* space
       where
-        true = "true" <* Parser.notFollowedBy (Parser.satisfy isIdentifierContinuation)
+        true = Parser.try ("true" <* Parser.notFollowedBy (Parser.satisfy isIdentifierContinuation))
 
-        false = "false" <* Parser.notFollowedBy (Parser.satisfy isIdentifierContinuation)
+        false = Parser.try ("false" <* Parser.notFollowedBy (Parser.satisfy isIdentifierContinuation))
 
     f64Lit = do
-        n <- decimal
-        void (Parser.char '.')
+        n <- Parser.try (decimal <* Parser.char '.')
         (s, c) <- Parser.match (Parser.option 0 decimal) <* space
         pure (F64Lit (encodeDecimalFloat n c (-Text.length s)))
       where
