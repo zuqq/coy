@@ -299,13 +299,13 @@ exprWithoutBlock = makeExprParser term ops
                 InfixL (UncheckedBinaryOpExpr . ($> Shr) <$> located (symbol ">>"))
             ],
             [
-                InfixL (UncheckedBinaryOpExpr . ($> BitAnd) <$> located (Parser.try bitAnd))
+                InfixL (UncheckedBinaryOpExpr . ($> BitAnd) <$> located bitAnd)
             ],
             [
                 InfixL (UncheckedBinaryOpExpr . ($> BitXor) <$> located (symbol "^"))
             ],
             [
-                InfixL (UncheckedBinaryOpExpr . ($> BitOr) <$> located (Parser.try bitOr))
+                InfixL (UncheckedBinaryOpExpr . ($> BitOr) <$> located bitOr)
             ],
             [
                 InfixN (UncheckedBinaryOpExpr . ($> Cmp Eq) <$> located (symbol "==")),
@@ -323,9 +323,9 @@ exprWithoutBlock = makeExprParser term ops
             ]
         ]
       where
-        bitAnd = Parser.char '&' <* Parser.notFollowedBy (Parser.char '&') <* space
+        bitAnd = Parser.try (Parser.char '&' <* Parser.notFollowedBy (Parser.char '&') <* space)
 
-        bitOr = Parser.char '|' <* Parser.notFollowedBy (Parser.char '|') <* space
+        bitOr = Parser.try (Parser.char '|' <* Parser.notFollowedBy (Parser.char '|') <* space)
 
 decimal :: Parser Integer
 decimal = Text.Megaparsec.Char.Lexer.decimal
