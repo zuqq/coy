@@ -1,10 +1,11 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Coy.Parse where
 
-import Control.Applicative ((<|>))
+import Control.Applicative (optional, (<|>))
 import Control.Monad.Combinators.Expr (Operator (InfixL, InfixN, Postfix, Prefix), makeExprParser)
 import Data.Bifunctor (first)
 import Data.Char (isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isDigit, isPrint)
@@ -99,23 +100,37 @@ fnArg = do
     pure (UncheckedFnArg an at)
 
 block :: Parser (Block 'Unchecked)
-block = withinBraces $ do
-    ss <- many (located (Parser.try statement) <?> "statement")
-    e <- located expr <?> "expression"
+block = do
+    (ss, e) <- withinBraces statements
     pure (UncheckedBlock (Vector.fromList ss) e)
+  where
+    statements = do
+        s <- located statement
+        case unpack s of
+            UncheckedLetStatement _ _ -> do
+                semicolon
+                loop s
+            UncheckedExprStatement e -> do
+                continue <- optional semicolon
+                case continue of
+                    Nothing -> pure (mempty, Located (locate s) e)
+                    Just () -> loop s
+
+    loop s = do
+        (ss, e) <- statements
+        pure (s : ss, e)
 
 statement :: Parser (Statement 'Unchecked)
-statement = letStatement <|> exprStatement
+statement = (letStatement <?> "`let` statement") <|> (exprStatement <?> "expression")
   where
     letStatement = do
-        "let" *> space1
+        Parser.try ("let" *> space1)
         p <- pattern
         equal
         e <- expr <?> "expression"
-        semicolon
         pure (UncheckedLetStatement p e)
 
-    exprStatement = UncheckedExprStatement <$> (expr <?> "expression") <* semicolon
+    exprStatement = UncheckedExprStatement <$> (expr <?> "expression")
 
 pattern :: Parser (Pattern 'Unchecked)
 pattern = (varPattern <?> "variable") <|> (structPattern <?> "struct pattern")
