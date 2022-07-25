@@ -147,7 +147,7 @@ exprWithBlock =
     blockExpr = BlockExpr <$> block
 
     ifExpr = do
-        "if" *> space1
+        Parser.try ("if" *> space1)
         e <- located exprWithoutBlock <?> "expression"
         b0 <- block
         "else" *> space1
@@ -155,7 +155,7 @@ exprWithBlock =
         pure (UncheckedIfExpr e b0 b1)
 
     matchExpr = do
-        "match" *> space1
+        Parser.try ("match" *> space1)
         location <- Location <$> Parser.getOffset
         e <- located exprWithoutBlock <?> "expression"
         as <- withinBraces (commaSeparated (matchArm <?> "`match` arm"))

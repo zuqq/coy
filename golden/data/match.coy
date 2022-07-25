@@ -1,0 +1,7 @@
+fn match_() -> () {
+    print!("Success!\n")
+}
+
+fn main() -> () {
+    match_()
+}

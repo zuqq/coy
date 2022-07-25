@@ -1,0 +1,7 @@
+fn if_() -> () {
+    print!("Success!\n")
+}
+
+fn main() -> () {
+    if_()
+}
