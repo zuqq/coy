@@ -179,7 +179,7 @@ matchArm = do
     pure (UncheckedMatchArm n v (Vector.fromList <$> xs) e)
 
 exprWithoutBlock :: Parser (ExprWithoutBlock 'Unchecked)
-exprWithoutBlock = makeExprParser term ops
+exprWithoutBlock = makeExprParser term operators
   where
     term =
         (litExpr <?> "literal expression")
@@ -223,7 +223,7 @@ exprWithoutBlock = makeExprParser term ops
 
         formatStringChunk = nonHole <|> hole
 
-        nonHole = NonHole <$> (escaped <|> text <|> leftBrace <|> rightBrace)
+        nonHole = NonHole <$> (escaped <|> nonEscaped <|> leftBrace <|> rightBrace)
 
         escaped =
             "\\\"" $> "\""
@@ -232,11 +232,9 @@ exprWithoutBlock = makeExprParser term ops
             <|> "\\\\" $> "\\"
             <|> "\\0" $> "\0"
 
-        text = escapePercentSign <$> Parser.takeWhile1P (Just "text character") isText
-
-        escapePercentSign = Text.replace "%" "%%"
-
-        isText c = isAscii c && isPrint c && c /= '"' && c /= '\\' && c /= '{' && c /= '}'
+        nonEscaped = Text.replace "%" "%%" <$> Parser.takeWhile1P (Just "text character") isText
+          where
+            isText c = isAscii c && isPrint c && c /= '"' && c /= '\\' && c /= '{' && c /= '}'
 
         leftBrace = "{{" $> "{"
 
@@ -272,7 +270,7 @@ exprWithoutBlock = makeExprParser term ops
 
     constExpr = UncheckedConstExpr <$> (located constName <?> "constant")
 
-    ops =
+    operators =
         [
             [
                 Prefix (UncheckedUnaryOpExpr . ($> Neg) <$> located (symbol "-"))
