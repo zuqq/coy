@@ -5,7 +5,7 @@
 
 module Coy.Parse where
 
-import Control.Applicative (optional, (<|>))
+import Control.Applicative ((<|>))
 import Control.Monad.Combinators.Expr (Operator (InfixL, InfixN, Postfix, Prefix), makeExprParser)
 import Data.Bifunctor (first)
 import Data.Char (isAlphaNum, isAscii, isAsciiLower, isAsciiUpper, isDigit, isPrint)
@@ -106,17 +106,10 @@ block = do
   where
     statements = do
         s <- located statement
+        let continue = semicolon *> (first (s :) <$> statements)
         case unpack s of
-            UncheckedLetStatement _ _ -> semicolon *> loop s
-            UncheckedExprStatement e -> do
-                continue <- optional semicolon
-                case continue of
-                    Nothing -> pure (mempty, Located (locate s) e)
-                    Just () -> loop s
-
-    loop s = do
-        (ss, e) <- statements
-        pure (s : ss, e)
+            UncheckedLetStatement _ _ -> continue
+            UncheckedExprStatement e -> continue <|> pure (mempty, Located (locate s) e)
 
 statement :: Parser (Statement 'Unchecked)
 statement = (letStatement <?> "`let` statement") <|> (exprStatement <?> "expression")
