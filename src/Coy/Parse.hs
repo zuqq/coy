@@ -177,8 +177,8 @@ exprWithoutBlock = makeExprParser term operators
     term =
         (litExpr <?> "literal expression")
         <|> (parenthesized exprWithoutBlock <?> "parenthesized expression")
-        <|> (callExpr <?> "call expression")
         <|> (printExpr <?> "`print!` expression")
+        <|> (callExpr <?> "call expression")
         <|> (varExpr <?> "variable")
         <|> (enumExpr <?> "enum expression")
         <|> (structExpr <?> "struct expression")
