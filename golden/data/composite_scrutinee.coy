@@ -1,8 +1,8 @@
 fn main() -> () {
     let x = 0;
     if x + 1 > 0 {
-        print!("Success\n")
+        print!("Success!\n")
     } else {
-        print!("Failure\n")
+        print!("Failure!\n")
     }
 }

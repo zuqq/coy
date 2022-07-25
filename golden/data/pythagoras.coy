@@ -1,8 +1,8 @@
 fn main() -> () {
     let c = 3 * 3 + 4 * 4 == 5 * 5;
     if c {
-        print!("Success\n")
+        print!("Success!\n")
     } else {
-        print!("Failure\n")
+        print!("Failure!\n")
     }
 }

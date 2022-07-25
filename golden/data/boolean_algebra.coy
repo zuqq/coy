@@ -1,7 +1,7 @@
 fn main() -> () {
     if true && false || false || !false {
-        print!("Success\n")
+        print!("Success!\n")
     } else {
-        print!("Failure\n")
+        print!("Failure!\n")
     }
 }

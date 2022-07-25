@@ -2,8 +2,8 @@ fn main() -> () {
     if// This is a legal comment!
     false {
         // This is a more normal comment.
-        print!("Failure\n")
+        print!("Failure!\n")
     } else {
-        print!("Success\n")
+        print!("Success!\n")
     }
 }
