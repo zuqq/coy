@@ -326,7 +326,7 @@ lit =
     <|> (f64Lit <?> "`f64` literal")
     <|> (i64Lit <?> "`i64` literal")
   where
-    unitLit = Parser.try (Parser.char '(' *> space *> Parser.char ')' *> space) $> UnitLit ()
+    unitLit = Parser.try (Parser.char '(' *> space *> Parser.char ')' *> space) $> UnitLit
 
     boolLit = BoolLit <$> (true $> True <|> false $> False) <* space
       where

@@ -660,7 +660,7 @@ unit = LLVM.AST.Constant.Struct (Just "unit") False mempty
 
 lit :: Lit -> LLVM.AST.Constant.Constant
 lit = \case
-    UnitLit () -> unit
+    UnitLit -> unit
     BoolLit b -> LLVM.AST.Constant.Int 1 (if b then 1 else 0)
     I64Lit x -> LLVM.AST.Constant.Int 64 x
     F64Lit x -> LLVM.AST.Constant.Float (LLVM.AST.Float.Double x)

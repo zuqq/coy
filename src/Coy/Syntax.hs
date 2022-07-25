@@ -338,7 +338,7 @@ data UncheckedExprWithoutBlock
     deriving (Eq, Ord, Show)
 
 data Lit
-    = UnitLit ()
+    = UnitLit
     | BoolLit Bool
     | I64Lit Integer
     | F64Lit Double
@@ -346,7 +346,7 @@ data Lit
 
 litType :: Lit -> Type u
 litType = \case
-    UnitLit _ -> Unit
+    UnitLit -> Unit
     BoolLit _ -> Bool
     I64Lit _ -> I64
     F64Lit _ -> F64

@@ -693,7 +693,7 @@ checkExprWithBlock = \case
                     Just actual -> throwError (MatchArmEnumVariantsMissing (locate e0) n0 actual)
 
                 case NonEmpty.nonEmpty checkedMatchArms of
-                    Nothing -> pure (CheckedLitExpr (UnitLit ()), Unit)
+                    Nothing -> pure (CheckedLitExpr UnitLit, Unit)
                     Just branches@((_, (_, Located _ expected)) :| _)
                         | Located location actual : _ <- otherResultTypes -> throwError (MatchArmResultTypeMismatch location actual expected)
                         | otherwise -> pure (CheckedMatchExpr e0' n0 sortedBranches, expected)
