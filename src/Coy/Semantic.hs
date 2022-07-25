@@ -20,7 +20,7 @@ import Data.Foldable (for_, toList, traverse_)
 import Data.Function (on)
 import Data.List (groupBy, intercalate, partition, sortOn)
 import Data.List.Index (indexed)
-import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Map.Strict (Map)
 import Data.Set (Set)
 import Data.Text (Text)
@@ -692,17 +692,17 @@ checkExprWithBlock = \case
                     Nothing -> pure ()
                     Just actual -> throwError (MatchArmEnumVariantsMissing (locate e0) n0 actual)
 
-                case checkedMatchArms of
-                    [] -> pure (CheckedMatchExpr e0' n0 mempty, Unit)
-                    (_, (_, Located _ expected)) : _
+                case NonEmpty.nonEmpty checkedMatchArms of
+                    Nothing -> pure (CheckedLitExpr (UnitLit ()), Unit)
+                    Just branches@((_, (_, Located _ expected)) :| _)
                         | Located location actual : _ <- otherResultTypes -> throwError (MatchArmResultTypeMismatch location actual expected)
-                        | otherwise -> pure (CheckedMatchExpr e0' n0 sortedCheckedMatchArms, expected)
+                        | otherwise -> pure (CheckedMatchExpr e0' n0 sortedBranches, expected)
                       where
                         resultTypes = fmap (snd . snd) checkedMatchArms
 
                         otherResultTypes = filter ((/= expected) . unpack) resultTypes
 
-                        sortedCheckedMatchArms = fmap (fst . snd) (sortOn fst checkedMatchArms)
+                        sortedBranches = fmap (fst . snd) (NonEmpty.sortWith fst branches)
             _ -> throwError (MatchScrutineeTypeMismatch (locate e0) t0)
 
 checkExprWithoutBlock :: UncheckedExprWithoutBlock -> Semantic (Expr 'Checked, Type 'Checked)

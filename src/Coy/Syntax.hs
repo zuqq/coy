@@ -8,6 +8,7 @@
 
 module Coy.Syntax where
 
+import Data.List.NonEmpty (NonEmpty)
 import Data.Text (Text)
 import Data.Vector (Vector)
 
@@ -181,7 +182,7 @@ data Expr (u :: Status) where
         -- ^ Scrutinee.
         -> Text
         -- ^ Name of the enum.
-        -> [MatchArm 'Checked]
+        -> NonEmpty (MatchArm 'Checked)
         -- ^ Match arms, ordered by variant.
         -> Expr 'Checked
 

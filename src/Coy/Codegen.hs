@@ -12,6 +12,7 @@ import Control.Monad (void, zipWithM_)
 import Control.Monad.Trans.State (State, evalState)
 import Data.Foldable (foldl', for_, toList, traverse_)
 import Data.List.Index (ifor, ifor_)
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Map (Map)
 import Data.Text (Text)
 import Data.Vector (Vector)
@@ -554,18 +555,14 @@ expr = \case
 
         joinLabel <- LLVM.IRBuilder.block
         LLVM.IRBuilder.phi [thenOut, elseOut]
-    -- The code path for `match` expressions with at least one arm uses a phi
-    -- node, which requires a predecessor; therefore it is more convenient to
-    -- fall into a completely different code path here.
-    CheckedMatchExpr _ _ [] -> expr (CheckedLitExpr (UnitLit ()))
-    CheckedMatchExpr e0 n as -> mdo
+    CheckedMatchExpr e0 n (a :| as) -> mdo
         p0 <- expr e0
         tagPointer <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr tagType)
         tagValue <- LLVM.IRBuilder.load tagPointer 0
         let outgoing = [(tagLit i, inLabel) | ((i, inLabel), _) <- branches]
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
 
-        branches <- ifor as \i (CheckedMatchArm xts e) -> do
+        branches <- ifor (a : as) \i (CheckedMatchArm xts e) -> do
             inLabel <- LLVM.IRBuilder.block
             result <- namespaced do
                 destructureEnumVariant n i xts p0
@@ -656,14 +653,14 @@ expr = \case
         a0 <- findString i
         as <- traverse expr es
         void (LLVM.IRBuilder.call printf [(a, mempty) | a <- a0 : as])
-        pure (LLVM.AST.ConstantOperand unitLit)
+        pure (LLVM.AST.ConstantOperand unit)
 
-unitLit :: LLVM.AST.Constant.Constant
-unitLit = LLVM.AST.Constant.Struct (Just "unit") False mempty
+unit :: LLVM.AST.Constant.Constant
+unit = LLVM.AST.Constant.Struct (Just "unit") False mempty
 
 lit :: Lit -> LLVM.AST.Constant.Constant
 lit = \case
-    UnitLit () -> unitLit
+    UnitLit () -> unit
     BoolLit b -> LLVM.AST.Constant.Int 1 (if b then 1 else 0)
     I64Lit x -> LLVM.AST.Constant.Int 64 x
     F64Lit x -> LLVM.AST.Constant.Float (LLVM.AST.Float.Double x)
@@ -708,13 +705,13 @@ tailExpr = \case
 
         elseLabel <- LLVM.IRBuilder.block
         namespaced (tailBlock elseBlock)
-    CheckedMatchExpr e0 n as -> mdo
+    CheckedMatchExpr e0 n (a :| as) -> mdo
         p0 <- expr e0
         tagPointer <- LLVM.IRBuilder.bitcast p0 (LLVM.AST.Type.ptr tagType)
         tagValue <- LLVM.IRBuilder.load tagPointer 0
         LLVM.IRBuilder.switch tagValue defaultLabel outgoing
 
-        outgoing <- ifor as \i (CheckedMatchArm xts e) -> do
+        outgoing <- ifor (a : as) \i (CheckedMatchArm xts e) -> do
             label <- LLVM.IRBuilder.block
             namespaced do
                 destructureEnumVariant n i xts p0
