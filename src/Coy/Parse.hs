@@ -134,9 +134,7 @@ pattern = (varPattern <?> "variable") <|> (structPattern <?> "struct pattern")
         pure (UncheckedStructPattern n (Vector.fromList <$> vs))
 
 expr :: Parser (Expr 'Unchecked)
-expr =
-    UncheckedExprWithBlock <$> exprWithBlock
-    <|> UncheckedExprWithoutBlock <$> located exprWithoutBlock
+expr = UncheckedExprWithBlock <$> exprWithBlock <|> UncheckedExprWithoutBlock <$> located exprWithoutBlock
 
 exprWithBlock :: Parser UncheckedExprWithBlock
 exprWithBlock =
@@ -218,12 +216,7 @@ exprWithoutBlock = makeExprParser term operators
 
         nonHole = NonHole <$> (escaped <|> nonEscaped <|> leftBrace <|> rightBrace)
 
-        escaped =
-            "\\\"" $> "\""
-            <|> "\\n" $> "\n"
-            <|> "\\t" $> "\t"
-            <|> "\\\\" $> "\\"
-            <|> "\\0" $> "\0"
+        escaped = "\\\"" $> "\"" <|> "\\n" $> "\n" <|> "\\t" $> "\t" <|> "\\\\" $> "\\" <|> "\\0" $> "\0"
 
         nonEscaped = Text.replace "%" "%%" <$> Parser.takeWhile1P (Just "text character") isText
           where
