@@ -127,9 +127,9 @@ fnArgType = \case
     CheckedFnArg _ at -> at
 
 data Block (u :: Status) where
-    UncheckedBlock :: Vector (Located (Statement 'Unchecked)) -> Located (Expr 'Unchecked) -> Block 'Unchecked
+    UncheckedBlock :: [Located (Statement 'Unchecked)] -> Located (Expr 'Unchecked) -> Block 'Unchecked
 
-    CheckedBlock :: Vector (Statement 'Checked) -> Expr 'Checked -> Block 'Checked
+    CheckedBlock :: [Statement 'Checked] -> Expr 'Checked -> Block 'Checked
 
 deriving instance Eq (Block u)
 deriving instance Ord (Block u)

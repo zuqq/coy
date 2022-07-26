@@ -102,7 +102,7 @@ fnArg = do
 block :: Parser (Block 'Unchecked)
 block = do
     (ss, e) <- withinBraces statements
-    pure (UncheckedBlock (Vector.fromList ss) e)
+    pure (UncheckedBlock ss e)
   where
     statements = do
         s <- located statement
