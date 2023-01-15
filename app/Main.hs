@@ -35,8 +35,7 @@ parseOptionsWithInfo =
         Options.Applicative.fullDesc
         <> Options.Applicative.header "Compile `.coy` files to LLVM IR."
   where
-    parseOptions =
-        Options
+    parseOptions = Options
         <$> parseModuleNameOption
         <*> parseOutputFilePathOption
         <*> parseInputFilePathOption
