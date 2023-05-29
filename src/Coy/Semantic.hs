@@ -598,6 +598,9 @@ sortTypeDefs typeDefs = bimap (fmap fromLabel) (fmap fromLabel) (topSort graph)
 
     graph = stars [(toLabel (typeDefName d), neighbors d) | d <- typeDefs]
 
+bindFnArg :: FnArg 'Checked -> Semantic ()
+bindFnArg (CheckedFnArg an at) = bindValue an at
+
 checkFnDef :: FnDecl 'Checked -> Block 'Unchecked -> Semantic (FnDef 'Checked)
 checkFnDef d@(CheckedFnDecl _ as returnType) b = do
     (b', resultType) <- namespaced do
@@ -605,9 +608,6 @@ checkFnDef d@(CheckedFnDecl _ as returnType) b = do
         checkBlock b
     when (resultType /= returnType) (throwError (FnDefTypeMismatch (locateBlock b) resultType returnType))
     pure (FnDef d b')
-  where
-    bindFnArg :: FnArg 'Checked -> Semantic ()
-    bindFnArg (CheckedFnArg an at) = bindValue an at
 
 checkBlock :: Block 'Unchecked -> Semantic (Block 'Checked, Type 'Checked)
 checkBlock (UncheckedBlock ss e) = do
@@ -704,6 +704,13 @@ checkExprWithBlock = \case
 
                         sortedBranches = fmap (fst . snd) (NonEmpty.sortWith fst branches)
             _ -> throwError (MatchScrutineeTypeMismatch (locate e0) t0)
+
+formatSpecifier :: Located (Type 'Checked) -> Semantic Builder
+formatSpecifier t =
+    case unpack t of
+        I64 -> pure "%lld"
+        F64 -> pure "%f"
+        _ -> throwError (TypeNotPrintable t)
 
 checkExprWithoutBlock :: UncheckedExprWithoutBlock -> Semantic (Expr 'Checked, Type 'Checked)
 checkExprWithoutBlock = \case
@@ -804,13 +811,6 @@ checkExprWithoutBlock = \case
                 (_ : chunks', t : types') -> do
                     s <- formatSpecifier t
                     loop (builder <> s) chunks' types'
-
-        formatSpecifier :: Located (Type 'Checked) -> Semantic Builder
-        formatSpecifier t =
-            case unpack t of
-                I64 -> pure "%lld"
-                F64 -> pure "%f"
-                _ -> throwError (TypeNotPrintable t)
 
 checkConstDef :: ConstDecl 'Checked -> Located (ConstInit 'Unchecked) -> Semantic (ConstDef 'Checked)
 checkConstDef d@(ConstDecl _ constDeclType) c = do
