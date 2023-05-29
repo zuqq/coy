@@ -183,6 +183,12 @@ intrinsicFns =
     , ("sqrt", "llvm.sqrt.f64", [LLVM.AST.Type.double], LLVM.AST.Type.double)
     ]
 
+memcpyReturnType :: LLVM.AST.Type
+memcpyReturnType = LLVM.AST.Type.void
+
+memcpyFnType :: LLVM.AST.Type
+memcpyFnType = LLVM.AST.Type.ptr (LLVM.AST.FunctionType memcpyReturnType memcpyArgTypes False)
+
 memcpyName :: LLVM.AST.Name
 memcpyName = "llvm.memcpy.p0i8.p0i8.i32"
 
@@ -194,13 +200,8 @@ memcpyArgTypes =
     , LLVM.AST.Type.i1
     ]
 
-memcpyReturnType :: LLVM.AST.Type
-memcpyReturnType = LLVM.AST.Type.void
-
 memcpy :: LLVM.AST.Operand
 memcpy = globalReference memcpyFnType memcpyName
-  where
-    memcpyFnType = LLVM.AST.Type.ptr (LLVM.AST.FunctionType memcpyReturnType memcpyArgTypes False)
 
 printfName :: LLVM.AST.Name
 printfName = "printf"
@@ -211,10 +212,11 @@ printfArgTypes = [LLVM.AST.Type.ptr LLVM.AST.Type.i8]
 printfReturnType :: LLVM.AST.Type
 printfReturnType = LLVM.AST.Type.i32
 
+printfFnType :: LLVM.AST.Type
+printfFnType = LLVM.AST.Type.ptr (LLVM.AST.FunctionType printfReturnType printfArgTypes True)
+
 printf :: LLVM.AST.Operand
 printf = globalReference printfFnType printfName
-  where
-    printfFnType = LLVM.AST.Type.ptr (LLVM.AST.FunctionType printfReturnType printfArgTypes True)
 
 index :: Integer -> LLVM.AST.Operand
 index = LLVM.IRBuilder.int32
@@ -268,6 +270,16 @@ computeEnumSizes typeDefs = enumSizes
         Struct n -> structSizes Map.! n
         Enum n -> enumSizes Map.! n
 
+string :: Int -> Text -> ModuleBuilder LLVM.AST.Operand
+string i s = do
+    let n' = reifyName (stringName i)
+
+    let s' = Text.unpack s
+
+    p <- LLVM.IRBuilder.privateGlobalStringPtr s' n'
+
+    pure (LLVM.AST.ConstantOperand p)
+
 builder :: Module 'Checked -> ModuleBuilder ()
 -- Here and elsewhere the @-XRecursiveDo@ extension allows me to use forward
 -- references without too much trouble.
@@ -319,15 +331,6 @@ builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBl
 
     pure ()
   where
-    string i s = do
-        let n' = reifyName (stringName i)
-
-        let s' = Text.unpack s
-
-        p <- LLVM.IRBuilder.privateGlobalStringPtr s' n'
-
-        pure (LLVM.AST.ConstantOperand p)
-
     defineType n t' = LLVM.IRBuilder.typedef (reifyName n) (Just t')
 
     structDef n0 ts =
@@ -361,22 +364,19 @@ builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBl
 
             defineType vn vt'
 
-    constDef :: ConstDef 'Checked -> ModuleBuilder ()
-    constDef (CheckedConstDef (ConstDecl x t) c) = do
-        let x' = reifyName x
+constDef :: ConstDef 'Checked -> ModuleBuilder ()
+constDef (CheckedConstDef (ConstDecl x t) c) = do
+    let x' = reifyName x
 
-        let t' =
-                case c of
-                    -- Enum constants have to be defined to have the variant
-                    -- type; they are cast to the base type at each use site.
-                    CheckedEnumInit n i _ -> reifyEnum n (Just i)
-                    _ -> reifyType t
+    -- Enum constants have to be defined to have the variant type; they are
+    -- cast to the base type at each use site.
+    let t' = case c of CheckedEnumInit n i _ -> reifyEnum n (Just i); _ -> reifyType t
 
-        let c' = reifyConstInit c
+    let c' = reifyConstInit c
 
-        reference <- LLVM.IRBuilder.privateConstGlobal x' t' c'
+    reference <- LLVM.IRBuilder.privateConstGlobal x' t' c'
 
-        bindConst x reference
+    bindConst x reference
 
 fnDef :: FnDef 'Checked -> ModuleBuilder LLVM.AST.Operand
 fnDef (FnDef (CheckedFnDecl n as t) b) =
