@@ -467,37 +467,30 @@ checkModule :: Module 'Unchecked -> Either SemanticError (Module 'Checked)
 checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
     -- Check for redefined types.
     let typeDefsByName = sortAndGroupBy (typeDefName . unpack) typeDefs
-
     for_ typeDefsByName \case
         _ : d : _ -> throwError (RedefinedType d)
         _ -> pure ()
 
     -- Check for redefined constants.
     let constDefsByName = sortAndGroupBy (constDefName . unpack) constDefs
-
     for_ constDefsByName \case
         _ : d : _ -> throwError (RedefinedConst d)
         _ -> pure ()
 
     -- Check for redefined functions.
     let fnDefsByName = sortAndGroupBy (fnDefName . unpack) fnDefs
-
     for_ fnDefsByName \case
         _ : d : _ -> throwError (RedefinedFn d)
         _ -> pure ()
 
     -- Resolve all types.
     typeDefs' <- traverse resolveTypeDef (fmap unpack typeDefs)
-
     let constDecls = [d | UncheckedConstDef d _ <- fmap unpack constDefs]
-
     let constInits = [c | UncheckedConstDef _ c <- fmap unpack constDefs]
 
     -- Resolve all constant declarations.
     constDecls' <- traverse resolveConstDecl constDecls
-
     let fnDecls = [d | FnDef d _ <- fmap unpack fnDefs]
-
     let fnBodies = [b | FnDef _ b <- fmap unpack fnDefs]
 
     -- Resolve all function declaractions.
@@ -525,7 +518,6 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
 
     -- Check that there is exactly one main function, of the right signature.
     let (otherFnDefs', mainFnDefs') = partition ((/= "main") . fnDefName) fnDefs'
-
     case mainFnDefs' of
         [] -> throwError MainFnDefMissing
         [mainFnDef'@(FnDef (CheckedFnDecl _ as' returnType) _)] -> do
