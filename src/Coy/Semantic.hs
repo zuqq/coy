@@ -25,7 +25,6 @@ import Data.Map.Strict (Map)
 import Data.Set (Set)
 import Data.Text (Text)
 import Data.Text.Lazy.Builder (Builder)
-import Data.Traversable (for)
 import Data.Vector (Vector)
 import Data.Void (Void)
 import Lens.Micro (Lens', lens)
@@ -42,9 +41,18 @@ import qualified Data.Vector as Vector
 
 import Coy.Syntax
 
+data EnumVariantContext = EnumVariantContext
+    { enumVariantIndex :: Int
+    , enumVariantFieldTypes :: Vector (Type 'Checked)
+    }
+    deriving Show
+
+invertEnumVariant :: (Int, EnumVariant 'Checked) -> (Text, EnumVariantContext)
+invertEnumVariant (i, EnumVariant v ts) = (v, EnumVariantContext i ts)
+
 data Context = Context
     { _structs :: Map Text (Vector (Type 'Checked))
-    , _enums :: Map Text (Map Text (Int, Vector (Type 'Checked)))
+    , _enums :: Map Text (Map Text EnumVariantContext)
     , _consts :: Map Text (Type 'Checked)
     , _strings :: Map Text Int
     , _fns :: Map Text (Vector (Type 'Checked), Type 'Checked)
@@ -55,7 +63,7 @@ data Context = Context
 structs :: Lens' Context (Map Text (Vector (Type 'Checked)))
 structs = lens _structs \c ss -> c {_structs = ss}
 
-enums :: Lens' Context (Map Text (Map Text (Int, Vector (Type 'Checked))))
+enums :: Lens' Context (Map Text (Map Text EnumVariantContext))
 enums = lens _enums \c es -> c {_enums = es}
 
 consts :: Lens' Context (Map Text (Type 'Checked))
@@ -125,12 +133,12 @@ findStruct n = do
     ss <- use structs
     Map.lookup (unpack n) ss `orFail` StructNotFound n
 
-findEnum :: Located Text -> Semantic (Map Text (Int, Vector (Type 'Checked)))
+findEnum :: Located Text -> Semantic (Map Text EnumVariantContext)
 findEnum n = do
     es <- use enums
     Map.lookup (unpack n) es `orFail` EnumNotFound n
 
-findEnumVariant :: Located Text -> Located Text -> Semantic (Int, Vector (Type 'Checked))
+findEnumVariant :: Located Text -> Located Text -> Semantic EnumVariantContext
 findEnumVariant n v = do
     e <- findEnum n
     Map.lookup (unpack v) e `orFail` EnumVariantNotFound (locate v) (unpack n) (unpack v)
@@ -455,9 +463,6 @@ semantic filePath input = first showError . checkModule
 sortAndGroupBy :: Ord key => (a -> key) -> [a] -> [[a]]
 sortAndGroupBy key = groupBy ((==) `on` key) . sortOn key
 
-invertEnumVariants :: [EnumVariant 'Checked] -> Map Text (Int, Vector (Type 'Checked))
-invertEnumVariants vs = Map.fromList [(v, (i, ts)) | (i, EnumVariant v ts) <- indexed vs]
-
 checkModule :: Module 'Unchecked -> Either SemanticError (Module 'Checked)
 checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
     -- Check for redefined types.
@@ -503,7 +508,7 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
 
     let context = Context
             { _structs = Map.fromList [(n, ts) | StructDef n ts <- typeDefs']
-            , _enums = Map.fromList [(n, invertEnumVariants vs) | CheckedEnumDef n vs <- typeDefs']
+            , _enums = Map.fromList [(n, Map.fromList (fmap invertEnumVariant (indexed vs))) | CheckedEnumDef n vs <- typeDefs']
             , _consts = Map.fromList [(n, t) | ConstDecl n t <- constDecls']
             , _strings = mempty
             , _fns = Map.fromList (intrinsicFns <> [(n, (fmap fnArgType as, t)) | CheckedFnDecl n as t <- fnDecls'])
@@ -643,12 +648,6 @@ checkExpr = \case
     UncheckedExprWithBlock e -> checkExprWithBlock e
     UncheckedExprWithoutBlock e -> checkExprWithoutBlock (unpack e)
 
-histogram :: Ord a => [a] -> Map a Int
-histogram = Map.fromListWith (+) . fmap (, 1)
-
-occurrences :: Ord a => a -> Map a Int -> Int
-occurrences = Map.findWithDefault 0
-
 checkExprWithBlock :: UncheckedExprWithBlock -> Semantic (Expr 'Checked, Type 'Checked)
 checkExprWithBlock = \case
     UncheckedBlockExpr b -> fmap (first CheckedBlockExpr) (checkBlock b)
@@ -665,24 +664,9 @@ checkExprWithBlock = \case
             Enum n0 -> do
                 vs0 <- fmap (Map.! n0) (use enums)
 
-                checkedMatchArms <- for uncheckedMatchArms \(UncheckedMatchArm n v xs e) -> do
-                    when (unpack n /= n0) (throwError (MatchArmEnumMismatch (locate n) (unpack n) n0))
-                    case Map.lookup (unpack v) vs0 of
-                        Nothing -> throwError (MatchArmEnumVariantNotFound (locate v) n0 (unpack v))
-                        Just (i, fieldTypes) -> do
-                            traverse_ checkReservedName (unpack xs)
-                            let actual = Vector.length (unpack xs)
-                            let expected = Vector.length fieldTypes
-                            when (actual /= expected) (throwError (StructPatternArityMismatch (locate xs) actual expected))
-                            namespaced do
-                                let xts = Vector.zip (fmap unpack (unpack xs)) fieldTypes
-                                traverse_ (uncurry bindValue) xts
-                                (e', resultType) <- checkExpr e
-                                pure (i, (CheckedMatchArm xts e', Located (locateExpr e) resultType))
+                checkedMatchArms <- traverse (checkMatchArm n0 vs0) uncheckedMatchArms
 
-                let coverageByIndex = histogram [i | (i, _) <- checkedMatchArms]
-
-                let coverageByName = [(v0, occurrences i coverageByIndex) | (v0, (i, _)) <- Map.toList vs0]
+                let coverageByName = matchCoverage vs0 checkedMatchArms
 
                 case NonEmpty.nonEmpty [v0 | (v0, n) <- coverageByName, n > 1] of
                     Nothing -> pure ()
@@ -694,16 +678,58 @@ checkExprWithBlock = \case
 
                 case NonEmpty.nonEmpty checkedMatchArms of
                     Nothing -> pure (CheckedLitExpr UnitLit, Unit)
-                    Just branches@((_, (_, Located _ expected)) :| _)
-                        | Located location actual : _ <- otherResultTypes -> throwError (MatchArmResultTypeMismatch location actual expected)
-                        | otherwise -> pure (CheckedMatchExpr e0' n0 sortedBranches, expected)
-                      where
-                        resultTypes = fmap (snd . snd) checkedMatchArms
-
-                        otherResultTypes = filter ((/= expected) . unpack) resultTypes
-
-                        sortedBranches = fmap (fst . snd) (NonEmpty.sortWith fst branches)
+                    Just branches -> do
+                        resultType <- matchResultType branches
+                        let sortedBranches = fmap cmacMatchArm (NonEmpty.sortWith cmacEnumVariantIndex branches)
+                        pure (CheckedMatchExpr e0' n0 sortedBranches, resultType)
             _ -> throwError (MatchScrutineeTypeMismatch (locate e0) t0)
+
+data CheckedMatchArmContext = CheckedMatchArmContext
+    { cmacMatchArm :: MatchArm 'Checked
+    , cmacResultLocation :: Location
+    , cmacResultType :: Type 'Checked
+    , cmacEnumVariantIndex :: Int
+    }
+
+checkMatchArm :: Text -> Map Text EnumVariantContext -> MatchArm 'Unchecked -> Semantic CheckedMatchArmContext
+checkMatchArm n0 vs0 (UncheckedMatchArm n v xs e) = do
+    when (unpack n /= n0) (throwError (MatchArmEnumMismatch (locate n) (unpack n) n0))
+    case Map.lookup (unpack v) vs0 of
+        Nothing -> throwError (MatchArmEnumVariantNotFound (locate v) n0 (unpack v))
+        Just (EnumVariantContext i fieldTypes) -> do
+            traverse_ checkReservedName (unpack xs)
+            let actual = Vector.length (unpack xs)
+            let expected = Vector.length fieldTypes
+            when (actual /= expected) (throwError (StructPatternArityMismatch (locate xs) actual expected))
+            namespaced do
+                let xts = Vector.zip (fmap unpack (unpack xs)) fieldTypes
+                traverse_ (uncurry bindValue) xts
+                (e', resultType) <- checkExpr e
+                pure CheckedMatchArmContext
+                    { cmacMatchArm = CheckedMatchArm xts e'
+                    , cmacResultLocation = locateExpr e
+                    , cmacResultType = resultType
+                    , cmacEnumVariantIndex = i
+                    }
+
+histogram :: Ord a => [a] -> Map a Int
+histogram = Map.fromListWith (+) . fmap (, 1)
+
+occurrences :: Ord a => a -> Map a Int -> Int
+occurrences = Map.findWithDefault 0
+
+matchCoverage :: Map Text EnumVariantContext -> [CheckedMatchArmContext] -> [(Text, Int)]
+matchCoverage vs0 checkedMatchArms = coverageByName
+  where
+    coverageByIndex = (`occurrences` histogram (fmap cmacEnumVariantIndex checkedMatchArms))
+
+    coverageByName = Map.toList (Map.map (coverageByIndex . enumVariantIndex) vs0)
+
+matchResultType :: MonadError SemanticError m => NonEmpty CheckedMatchArmContext -> m (Type 'Checked)
+matchResultType (CheckedMatchArmContext {cmacResultType = expected} :| checkedMatchArms) =
+    case filter ((/= expected) . cmacResultType) checkedMatchArms of
+        [] -> pure expected
+        CheckedMatchArmContext {cmacResultLocation = location, cmacResultType = actual} : _ -> throwError (MatchArmResultTypeMismatch location actual expected)
 
 formatSpecifier :: Located (Type 'Checked) -> Semantic Builder
 formatSpecifier t =
@@ -769,7 +795,7 @@ checkExprWithoutBlock = \case
     UncheckedEnumExpr n v es -> do
         ets' <- traverse checkExprWithoutBlock (unpack es)
         let ts = fmap snd ets'
-        (i, fieldTypes) <- findEnumVariant n v
+        EnumVariantContext i fieldTypes <- findEnumVariant n v
         when (ts /= fieldTypes) (throwError (ArgumentTypesMismatch (locate es) ts fieldTypes))
         pure (CheckedEnumExpr (unpack n) i ets', Enum (unpack n))
     UncheckedPrintExpr (UncheckedFormatString cs) es -> do
@@ -833,7 +859,7 @@ checkConstInit = \case
         when (ts /= fieldTypes) (throwError (ArgumentTypesMismatch (locate cs) ts fieldTypes))
         pure (CheckedStructInit (unpack n) (fmap fst cts'), Struct (unpack n))
     UncheckedEnumInit n v cs -> do
-        (i, fieldTypes) <- findEnumVariant n v
+        EnumVariantContext i fieldTypes <- findEnumVariant n v
         cts' <- traverse checkConstInit (unpack cs)
         let ts = fmap snd cts'
         when (ts /= fieldTypes) (throwError (ArgumentTypesMismatch (locate cs) ts fieldTypes))
