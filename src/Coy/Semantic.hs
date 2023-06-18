@@ -485,15 +485,15 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
 
     -- Resolve all types.
     typeDefs' <- traverse resolveTypeDef (fmap unpack typeDefs)
-    let constDecls = [d | UncheckedConstDef d _ <- fmap unpack constDefs]
-    let constInits = [c | UncheckedConstDef _ c <- fmap unpack constDefs]
 
     -- Resolve all constant declarations.
+    let constDecls = [d | UncheckedConstDef d _ <- fmap unpack constDefs]
+    let constInits = [c | UncheckedConstDef _ c <- fmap unpack constDefs]
     constDecls' <- traverse resolveConstDecl constDecls
-    let fnDecls = [d | FnDef d _ <- fmap unpack fnDefs]
-    let fnBodies = [b | FnDef _ b <- fmap unpack fnDefs]
 
     -- Resolve all function declaractions.
+    let fnDecls = [d | FnDef d _ <- fmap unpack fnDefs]
+    let fnBodies = [b | FnDef _ b <- fmap unpack fnDefs]
     fnDecls' <- traverse resolveFnDecl fnDecls
 
     -- Check that the type definition graph is acyclic.
