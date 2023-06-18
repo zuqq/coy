@@ -674,10 +674,10 @@ checkExprWithBlock = \case
             _ -> throwError (MatchScrutineeTypeMismatch (locate e0) t0)
 
 data CheckedMatchArmContext = CheckedMatchArmContext
-    { cmacMatchArm :: MatchArm 'Checked
+    { cmacEnumVariantIndex :: Int
+    , cmacMatchArm :: MatchArm 'Checked
     , cmacResultLocation :: Location
     , cmacResultType :: Type 'Checked
-    , cmacEnumVariantIndex :: Int
     }
 
 checkMatchArm :: Text -> Map Text EnumVariantContext -> MatchArm 'Unchecked -> Semantic CheckedMatchArmContext
@@ -695,10 +695,10 @@ checkMatchArm n0 vs0 (UncheckedMatchArm n v xs e) = do
                 traverse_ (uncurry bindValue) xts
                 (e', resultType) <- checkExpr e
                 pure CheckedMatchArmContext
-                    { cmacMatchArm = CheckedMatchArm xts e'
+                    { cmacEnumVariantIndex = i
+                    , cmacMatchArm = CheckedMatchArm xts e'
                     , cmacResultLocation = locateExpr e
                     , cmacResultType = resultType
-                    , cmacEnumVariantIndex = i
                     }
 
 histogram :: Ord a => [a] -> Map a Int
