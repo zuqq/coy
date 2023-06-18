@@ -718,7 +718,8 @@ matchResultType :: MonadError SemanticError m => NonEmpty CheckedMatchArmContext
 matchResultType (CheckedMatchArmContext {cmacResultType = expected} :| checkedMatchArms) =
     case filter ((/= expected) . cmacResultType) checkedMatchArms of
         [] -> pure expected
-        CheckedMatchArmContext {cmacResultLocation = location, cmacResultType = actual} : _ -> throwError (MatchArmResultTypeMismatch location actual expected)
+        CheckedMatchArmContext {cmacResultLocation = location, cmacResultType = actual} : _ ->
+            throwError (MatchArmResultTypeMismatch location actual expected)
 
 formatSpecifier :: Located (Type 'Checked) -> Semantic Builder
 formatSpecifier t =
