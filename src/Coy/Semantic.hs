@@ -18,7 +18,7 @@ import Control.Monad.Trans.State.Strict (StateT, evalStateT, runStateT)
 import Data.Bifunctor (bimap, first)
 import Data.Foldable (for_, toList, traverse_)
 import Data.Function (on)
-import Data.List (groupBy, intercalate, partition, sortOn)
+import Data.List (find, groupBy, intercalate, partition, sortOn)
 import Data.List.Index (indexed)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Map.Strict (Map)
@@ -96,7 +96,7 @@ data SemanticError
     | ArgumentTypesMismatch Location (Vector (Type 'Checked)) (Vector (Type 'Checked))
     | MainFnDefMissing
     | MainFnDefArityMismatch Location Int
-    | MainFnDefReturnTypeMismatch Location (Type 'Checked)
+    | MainFnDefReturnTypeMismatch Location (Type 'Unchecked)
     | FnDefTypeMismatch Location (Type 'Checked) (Type 'Checked)
     | IfScrutineeTypeMismatch Location (Type 'Checked)
     | IfBlocksTypeMismatch Location (Type 'Checked) (Type 'Checked)
@@ -496,6 +496,14 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
     let fnBodies = [b | FnDef _ b <- fmap unpack fnDefs]
     fnDecls' <- traverse resolveFnDecl fnDecls
 
+    -- Check that there is a main function of the right signature.
+    case find ((== "main") . fnDeclName) fnDecls of
+        Nothing -> throwError MainFnDefMissing
+        Just (UncheckedFnDecl _ (Located arityLocation as) (Located returnTypeLocation returnType)) -> do
+            let arity = Vector.length as
+            when (arity /= 0) (throwError (MainFnDefArityMismatch arityLocation arity))
+            when (returnType /= Unit) (throwError (MainFnDefReturnTypeMismatch returnTypeLocation returnType))
+
     -- Check that the type definition graph is acyclic.
     void (first TypeCycle (sortTypeDefs (fmap unpack typeDefs)))
 
@@ -516,21 +524,10 @@ checkModule (UncheckedModule typeDefs constDefs fnDefs) = do
 
     let internPool = Vector.fromList (fmap fst (sortOn snd (Map.toList (view strings context'))))
 
-    -- Check that there is exactly one main function, of the right signature.
     let (otherFnDefs', mainFnDefs') = partition ((/= "main") . fnDefName) fnDefs'
     case mainFnDefs' of
-        [] -> throwError MainFnDefMissing
-        [mainFnDef'@(FnDef (CheckedFnDecl _ as' returnType) _)] -> do
-            when (arity /= 0) (throwError (MainFnDefArityMismatch arityLocation arity))
-            when (returnType /= Unit) (throwError (MainFnDefReturnTypeMismatch returnTypeLocation returnType))
-            pure (CheckedModule typeDefs' constDefs' internPool otherFnDefs' mainFnDef')
-          where
-            arity = Vector.length as'
-
-            fnDeclsByName = Map.fromList [(fnDeclName d, d) | d <- fnDecls]
-
-            UncheckedFnDecl _ (Located arityLocation _) (Located returnTypeLocation _) = fnDeclsByName Map.! "main"
-        _ -> error ("Internal error: expected at most one main function, got `" <> show mainFnDefs' <> "`.")
+        [mainFnDef'] -> pure (CheckedModule typeDefs' constDefs' internPool otherFnDefs' mainFnDef')
+        _ -> error ("Internal error: expected exactly one main function, got `" <> show mainFnDefs' <> "`.")
   where
     structNames = Set.fromList [n | StructDef n _ <- fmap unpack typeDefs]
 
