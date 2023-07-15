@@ -57,7 +57,6 @@ shouldNotPass filePath = do
 forDirectory :: FilePath -> (FilePath -> Expectation) -> Spec
 forDirectory directory check = do
     testCases <- runIO (getTestCases directory)
-
     describe directory (traverse_ runTestCase testCases)
   where
     runTestCase testCase = it (testCaseName testCase) (check (testCaseInputFile testCase))
@@ -65,7 +64,5 @@ forDirectory directory check = do
 spec :: Spec
 spec = do
     forDirectory "examples" shouldPass
-
     forDirectory "golden/data" shouldPass
-
     forDirectory "test/data/semantic/bad" shouldNotPass

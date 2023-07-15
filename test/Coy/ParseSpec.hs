@@ -50,7 +50,6 @@ shouldNotParse filePath = do
 forDirectory :: FilePath -> (FilePath -> Expectation) -> Spec
 forDirectory directory check = do
     testCases <- runIO (getTestCases directory)
-
     describe directory (traverse_ runTestCase testCases)
   where
     runTestCase testCase = it (testCaseName testCase) (check (testCaseInputFile testCase))
@@ -58,9 +57,6 @@ forDirectory directory check = do
 spec :: Spec
 spec = do
     forDirectory "examples" shouldParse
-
     forDirectory "golden/data" shouldParse
-
     forDirectory "test/data/parse/bad" shouldNotParse
-
     forDirectory "test/data/parse/good" shouldParse

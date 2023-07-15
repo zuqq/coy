@@ -94,20 +94,15 @@ compileAndRunIn workingDir coy inputFile = do
 spec :: Spec
 spec = do
     coyExe <- runIO (fmap (</> "coy-exe") getBinDir)
-
     inputDir <- runIO (makeAbsolute "./golden/data")
-
     testCases <- runIO (getTestCases coyExe inputDir)
-
     aroundAll (withTempDirectory inputDir mempty) $
         describe "golden" (parallel (traverse_ runTestCase testCases))
   where
     runTestCase testCase =
         it (testCaseName testCase) \workingDir -> do
             actual <- compileAndRunIn workingDir (testCaseCoyExe testCase) (testCaseInputFile testCase)
-
             expected <- ByteString.Lazy.readFile (testCaseGoldenFile testCase)
-
             actual `shouldBe` expected
 
 main :: IO ()

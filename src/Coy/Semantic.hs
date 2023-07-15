@@ -790,29 +790,20 @@ checkExprWithoutBlock = \case
         pure (CheckedEnumExpr (unpack n) i ets', Enum (unpack n))
     UncheckedPrintExpr (UncheckedFormatString cs) es -> do
         ets' <- traverse (traverse checkExprWithoutBlock) es
-
         let ts = fmap (fmap snd) ets'
-
         builder <- loop mempty cs ts
-
         let f = Text.Lazy.toStrict (Text.Lazy.Builder.toLazyText builder)
-
         i <- bindString f
-
         let es' = fmap (fst . unpack) ets'
-
         pure (CheckedPrintExpr (CheckedFormatString i) es', Unit)
       where
         loop builder chunks types =
             let (builder', chunks') = nonHoles builder chunks in
-
             hole builder' chunks' types
 
         nonHoles builder chunks =
             let (prefix, chunks') = span ((/= Hole) . unpack) chunks in
-
             let builder' = builder <> mconcat [Text.Lazy.Builder.fromText x | NonHole x <- fmap unpack prefix] in
-
             (builder', chunks')
 
         hole builder chunks types =

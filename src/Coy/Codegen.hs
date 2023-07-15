@@ -273,11 +273,8 @@ computeEnumSizes typeDefs = enumSizes
 string :: Int -> Text -> ModuleBuilder LLVM.AST.Operand
 string i s = do
     let n' = reifyName (stringName i)
-
     let s' = Text.unpack s
-
     p <- LLVM.IRBuilder.privateGlobalStringPtr s' n'
-
     pure (LLVM.AST.ConstantOperand p)
 
 builder :: Module 'Checked -> ModuleBuilder ()
@@ -320,13 +317,10 @@ builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBl
 
     -- Define the main function.
     let mainArgs = mempty
-
     let mainReturnType = reifyType Unit
-
     let mainBody _ = do
             LLVM.IRBuilder.emitBlockStart "entry"
             namespaced (tailBlock mainBlock)
-
     mainFn <- LLVM.IRBuilder.function "main" mainArgs mainReturnType mainBody
 
     pure ()
@@ -335,9 +329,7 @@ builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBl
 
     structDef n0 ts =
         let n = structName n0 in
-
         let t' = LLVM.AST.StructureType False (fmap reifyType (toList ts)) in
-
         void (defineType n t')
 
     enumSizes = computeEnumSizes typeDefs
@@ -345,70 +337,50 @@ builder (CheckedModule typeDefs constDefs internPool otherFnDefs (FnDef _ mainBl
     enumDef n0 vs = do
         -- Define the base type.
         let n = enumName n0 Nothing
-
         let k = fromIntegral (enumSizes Map.! n0 - tagSize)
-
         let placeholder = LLVM.AST.ArrayType k LLVM.AST.Type.i8
-
         let t' = LLVM.AST.StructureType False [tagType, placeholder]
-
         void (defineType n t')
 
         -- Define the variant types.
         ifor_ vs \i (EnumVariant _ ts) ->
             let vn = enumName n0 (Just i) in
-
             let ts' = fmap reifyType (toList ts) in
-
             let vt' = LLVM.AST.StructureType False (tagType : ts') in
-
             defineType vn vt'
 
 constDef :: ConstDef 'Checked -> ModuleBuilder ()
 constDef (CheckedConstDef (ConstDecl x t) c) = do
     let x' = reifyName x
-
     -- Enum constants have to be defined to have the variant type; they are
     -- cast to the base type at each use site.
     let t' = case c of CheckedEnumInit n i _ -> reifyEnum n (Just i); _ -> reifyType t
-
     let c' = reifyConstInit c
-
     reference <- LLVM.IRBuilder.privateConstGlobal x' t' c'
-
     bindConst x reference
 
 fnDef :: FnDef 'Checked -> ModuleBuilder LLVM.AST.Operand
 fnDef (FnDef (CheckedFnDecl n as t) b) =
     let n' = reifyName (fnName n) in
-
     let defineFn = LLVM.IRBuilder.privateFunction n' in
-
     let metadata = [(operandType at, operandAttrs at) | CheckedFnArg _ at <- toList as] in
-
     let ans = [an | CheckedFnArg an _ <- toList as] in
-
     if hasPointerOperandType t then
         let returnArgType = operandType t
-
         in let metadata' = (returnArgType, returnArgAttrs) : metadata
-
         in let body operands = do
                 LLVM.IRBuilder.emitBlockStart "entry"
                 namespaced do
                     zipWithM_ bindValue ans (tail operands)
                     tailBlock b
-
         in defineFn metadata' LLVM.AST.Type.void body
     else
         let t' = reifyType t
-
         in let body operands = do
                 LLVM.IRBuilder.emitBlockStart "entry"
                 namespaced do
                     zipWithM_ bindValue ans operands
                     tailBlock b
-
         in defineFn metadata t' body
 
 copyTo
@@ -421,15 +393,10 @@ copyTo
     -> IRBuilder ()
 copyTo dest0 src0 t' = do
     dest <- castToVoidPointer dest0
-
     src <- castToVoidPointer src0
-
     let len = LLVM.AST.ConstantOperand (LLVM.AST.Constant.sizeof t')
-
     let isvolatile = LLVM.IRBuilder.bit 0
-
     let as' = [(dest, mempty), (src, mempty), (len, mempty), (isvolatile, mempty)]
-
     void (LLVM.IRBuilder.call memcpy as')
   where
     castToVoidPointer p = LLVM.IRBuilder.bitcast p (LLVM.AST.Type.ptr LLVM.AST.Type.i8)
@@ -672,15 +639,11 @@ reifyConstInit = \case
     NegF64LitInit x -> lit (F64Lit (-x))
     CheckedStructInit n cs ->
         let n' = reifyName (structName n) in
-
         let cs' = fmap reifyConstInit (toList cs) in
-
         LLVM.AST.Constant.Struct (Just n') False cs'
     CheckedEnumInit n i cs ->
         let n' = reifyName (enumName n (Just i)) in
-
         let cs' = tagLit i : fmap reifyConstInit (toList cs) in
-
         LLVM.AST.Constant.Struct (Just n') False cs'
 
 -- Entry point for blocks in tail position.

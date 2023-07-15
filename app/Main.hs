@@ -67,11 +67,9 @@ tryReadInput = \case
 readInput :: FilePath -> IO ByteString
 readInput inputFilePath = do
     result <- tryReadInput inputFilePath
-
     case result of
         Left e -> do
             hPutStr stderr ("Failed to read input file `" <> inputFilePath <> "`:\n\n" <> show e)
-
             exitFailure
         Right rawInput -> pure rawInput
 
@@ -80,7 +78,6 @@ decodeRawInput inputFilePath rawInput =
     case Text.Encoding.decodeUtf8' rawInput of
         Left e -> do
             hPutStr stderr ("Failed to decode input file `" <> inputFilePath <> "` as UTF-8:\n\n" <> show e)
-
             exitFailure
         Right input -> pure input
 
@@ -89,7 +86,6 @@ parseInput inputFilePath input =
     case parse inputFilePath input of
         Left e -> do
             hPutStr stderr e
-
             exitFailure
         Right uncheckedModule -> pure uncheckedModule
 
@@ -98,7 +94,6 @@ checkInput inputFilePath input uncheckedModule =
     case semantic inputFilePath input uncheckedModule of
         Left e -> do
             hPutStr stderr e
-
             exitFailure
         Right checkedModule -> pure checkedModule
 
@@ -110,36 +105,28 @@ tryWriteOutput = \case
 writeOutput :: FilePath -> ByteString -> IO ()
 writeOutput outputFilePath output = do
     result <- tryWriteOutput outputFilePath output
-
     case result of
         Left e -> do
             hPutStr stderr ("Failed to write output file " <> outputFilePath <> ":\n\n" <> show e)
-
             exitFailure
         Right () -> mempty
 
 main :: IO ()
 main = do
     options <- Options.Applicative.execParser parseOptionsWithInfo
-
     let inputFilePath = inputFilePathOption options
-
     let defaultModuleName =
             case inputFilePath of
                 "-" -> "from_stdin"
                 _ -> takeBaseName inputFilePath
-
     let moduleName = fromMaybe defaultModuleName (moduleNameOption options)
-
     let defaultOutputFilePath =
             case inputFilePath of
                 "-" -> "-"
                 _ -> moduleName <.> ".ll"
-
     let outputFilePath = fromMaybe defaultOutputFilePath (outputFilePathOption options)
 
     rawInput <- readInput inputFilePath
-
     input <- decodeRawInput inputFilePath rawInput
 
     uncheckedModule <- parseInput inputFilePath input
@@ -149,5 +136,4 @@ main = do
     let code = codegen moduleName checkedModule
 
     let bytes = Text.Encoding.encodeUtf8 (Text.Lazy.toStrict (LLVM.Pretty.ppllvm code))
-
     writeOutput outputFilePath bytes
