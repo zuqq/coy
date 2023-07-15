@@ -206,6 +206,16 @@ reservedNames =
 checkReservedName :: MonadError SemanticError m => Located Text -> m ()
 checkReservedName n = when (unpack n `Set.member` reservedNames) (throwError (ReservedName n))
 
+prettyTypeList :: [Type u] -> String
+prettyTypeList = \case
+    [] -> "<none>"
+    ts -> intercalate ", " ["`" <> prettyType t <> "`" | t <- ts]
+
+prettyArity :: Int -> String
+prettyArity = \case
+    1 -> "1 argument"
+    n -> show n <> " arguments"
+
 semantic :: String -> Text -> Module 'Unchecked -> Either String (Module 'Checked)
 semantic filePath input = first showError . checkModule
   where
@@ -222,14 +232,6 @@ semantic filePath input = first showError . checkModule
             , pstateTabWidth = defaultTabWidth
             , pstateLinePrefix = mempty
             }
-
-    prettyTypeList = \case
-        [] -> "<none>"
-        ts -> intercalate ", " ["`" <> prettyType t <> "`" | t <- ts]
-
-    prettyArity = \case
-        1 -> "1 argument"
-        n -> show n <> " arguments"
 
     showError = \case
         RedefinedType (Located location d) -> errorBundlePretty (parseErrorBundle location message)
