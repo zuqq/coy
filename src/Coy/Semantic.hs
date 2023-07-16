@@ -117,6 +117,310 @@ data SemanticError
     | ReservedName (Located Text)
     deriving Show
 
+data SemanticErrorMessage = SemanticErrorMessage
+    { errorLocation :: Maybe Location
+    , errorMessage :: String
+    }
+
+prettyTypeList :: [Type u] -> String
+prettyTypeList = \case
+    [] -> "<none>"
+    ts -> intercalate ", " ["`" <> prettyType t <> "`" | t <- ts]
+
+prettyArity :: Int -> String
+prettyArity = \case
+    1 -> "1 argument"
+    n -> show n <> " arguments"
+
+explainError :: SemanticError -> SemanticErrorMessage
+explainError = \case
+    RedefinedType (Located location d) -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "A type named `" <> Text.unpack (typeDefName d) <> "` was already defined earlier in this file."
+        }
+    RedefinedConst (Located location d) -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "A constant named `" <> Text.unpack (constDefName d) <> "` was already defined earlier in this file."
+        }
+    RedefinedFn (Located location d) -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "A function named `" <> Text.unpack (fnDefName d) <> "` was already defined earlier in this file."
+        }
+    RedefinedEnumVariant location n v -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "An enum variant named `" <> Text.unpack (n <> "::" <> v) <> "` was already defined earlier in this file."
+        }
+    StructOrEnumNotFound (Located location n) -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "Type `" <> Text.unpack n <> "` not found."
+        }
+    TypeCycle typeCycle -> SemanticErrorMessage
+        { errorLocation = Nothing
+        , errorMessage = "The following types form a cycle: " <> intercalate ", " ["`" <> Text.unpack (typeDefName d) <> "`" | d <- toList typeCycle]
+        }
+    StructNotFound (Located location n) -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "Struct `" <> Text.unpack n <> "` not found."
+        }
+    EnumNotFound (Located location n) -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "Enum `" <> Text.unpack n <> "` not found."
+        }
+    EnumVariantNotFound location n v -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "Enum variant `" <> Text.unpack (n <> "::" <> v) <> "` not found."
+        }
+    ConstNotFound (Located location n) -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "Constant `" <> Text.unpack n <> "` not found."
+        }
+    FnNotFound (Located location n) -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "Function `" <> Text.unpack n <> "` not found."
+        }
+    ValueNotFound (Located location n) -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "Value `" <> Text.unpack n <> "` not found."
+        }
+    ConstDefTypeMismatch location actual expected -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            intercalate
+                "\n"
+                [ "The right-hand side of this constant definition is of the wrong type."
+                , ""
+                , "Expected type:"
+                , ""
+                , "    `" <> prettyType expected <> "`"
+                , ""
+                , "Actual type:"
+                , ""
+                , "    `" <> prettyType actual <> "`"
+                , ""
+                ]
+        }
+    NegLitInitTypeMismatch (Located location t') -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "Type `" <> prettyType t' <> "` has no definition of `-`."
+        }
+    ArgumentTypesMismatch location actual expected -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            intercalate
+                "\n"
+                [ "Incorrect argument types."
+                , ""
+                , "Expected types:"
+                , ""
+                , "    " <> prettyTypeList (toList expected)
+                , ""
+                , "Actual types:"
+                , ""
+                , "    " <> prettyTypeList (toList actual)
+                , ""
+                ]
+        }
+    MainFnDefMissing -> SemanticErrorMessage
+        { errorLocation = Nothing
+        , errorMessage = "Main function not found."
+        }
+    MainFnDefArityMismatch location arity -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            "This function has "
+            <> prettyArity arity
+            <> ", but the main function is required to have "
+            <> prettyArity 0
+            <> "."
+        }
+    MainFnDefReturnTypeMismatch location returnType -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            "The declared return type of this function is `"
+            <> prettyType returnType
+            <> "`, but the return type of the main function is required to be `"
+            <> prettyType Unit
+            <> "`."
+        }
+    FnDefTypeMismatch location resultType returnType -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            "This function returns a value of type `"
+            <> prettyType resultType
+            <> "`, but its declared return type is `"
+            <> prettyType returnType
+            <> "`."
+        }
+    IfScrutineeTypeMismatch location actual -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            intercalate
+                "\n"
+                [ "This `if` scrutinee is of the wrong type."
+                , ""
+                , "Expected type:"
+                , ""
+                , "    `" <> prettyType Bool <> "`"
+                , ""
+                , "Actual type:"
+                , ""
+                , "    `" <> prettyType actual <> "`"
+                , ""
+                ]
+        }
+    IfBlocksTypeMismatch location actual expected -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            intercalate
+                "\n"
+                [ "This block returns a value of a different type than the first block of the enclosing `if`."
+                , ""
+                , "Expected type:"
+                , ""
+                , "    `" <> prettyType expected <> "`"
+                , ""
+                , "Actual type:"
+                , ""
+                , "    `" <> prettyType actual <> "`"
+                , ""
+                ]
+        }
+    MatchScrutineeTypeMismatch location t0 -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "This `match` scrutinee is of type `" <> prettyType t0 <> "`, which is not an enum."
+        }
+    MatchArmEnumMismatch location actual expected -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            "This `match` arm refers to an enum named `"
+            <> Text.unpack actual
+            <> "`, which is different from the expected `"
+            <> Text.unpack expected
+            <> "`."
+        }
+    MatchArmEnumVariantNotFound location n v -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "Enum variant `" <> Text.unpack (n <> "::" <> v) <> "` not found."
+        }
+    MatchArmResultTypeMismatch location t1 t0 -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            intercalate
+                "\n"
+                [ "This block returns a value of a different type than the first block of the enclosing `match`."
+                , ""
+                , "Expected type:"
+                , ""
+                , "    `" <> prettyType t0 <> "`"
+                , ""
+                , "Actual type:"
+                , ""
+                , "    `" <> prettyType t1 <> "`"
+                , ""
+                ]
+        }
+    MatchArmEnumVariantsDuplicated location n vs -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            intercalate
+                "\n"
+                [ "The following enum variants are matched by more than one arm:"
+                , ""
+                , "    " <> intercalate ", " [Text.unpack ("`" <> n <> "::" <> v <> "`") | v <- toList vs]
+                , ""
+                ]
+        }
+    MatchArmEnumVariantsMissing location n vs -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            intercalate
+                "\n"
+                [ "The following enum variants are matched by zero arms:"
+                , ""
+                , "    " <> intercalate ", " [Text.unpack ("`" <> n <> "::" <> v <> "`") | v <- toList vs]
+                , ""
+                ]
+        }
+    StructPatternArityMismatch location actual expected -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            "This pattern has "
+            <> prettyArity actual
+            <> ", but it was expected to have "
+            <> prettyArity expected
+            <> "."
+        }
+    StructPatternTypeMismatch location actual expected -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            "The right-hand side of this pattern is of type `"
+            <> prettyType actual
+            <> "`, but it was expected to be of type `"
+            <> prettyType expected
+            <> "`."
+        }
+    UnaryOpTypeMismatch location o t -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            "The operator `"
+            <> prettyUnaryOp o
+            <> "` is not defined for the type `"
+            <> prettyType t
+            <> "`."
+        }
+    BinaryOpTypeMismatch location o t0 t1 -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage =
+            "The operator `"
+            <> prettyBinaryOp o
+            <> "` is not defined for the types `"
+            <> prettyType t0
+            <> "`, `"
+            <> prettyType t1
+            <> "`."
+        }
+    PrintExprExcessHole location -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "No argument was given for this hole."
+        }
+    PrintExprExcessArg location -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "No hole was given for this argument"
+        }
+    TypeNotPrintable (Located location t) -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "The type `" <> prettyType t <> "` is not printable."
+        }
+    IntrinsicFn (Located location n) -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "The name `" <> Text.unpack n <> "` is already taken by an intrinsic function."
+        }
+    ReservedName (Located location n) -> SemanticErrorMessage
+        { errorLocation = Just location
+        , errorMessage = "The name `" <> Text.unpack n <> "` is reserved by the compiler."
+        }
+
+initialPosState :: String -> Text -> PosState Text
+initialPosState inputFilePath input = PosState
+    { pstateInput = input
+    , pstateOffset = 0
+    , pstateSourcePos = initialPos inputFilePath
+    , pstateTabWidth = defaultTabWidth
+    , pstateLinePrefix = mempty
+    }
+
+parseErrorBundle :: String -> Text -> Location -> String -> ParseErrorBundle Text Void
+parseErrorBundle inputFilePath input location message = ParseErrorBundle
+    { bundleErrors = NonEmpty.singleton (FancyError (offset location) (Set.singleton (ErrorFail message)))
+    , bundlePosState = initialPosState inputFilePath input
+    }
+
+renderErrorMessage :: String -> Text -> SemanticErrorMessage -> String
+renderErrorMessage inputFilePath input SemanticErrorMessage {errorLocation = maybeLocation, errorMessage = message} =
+    case maybeLocation of
+        Nothing -> message
+        Just location -> errorBundlePretty (parseErrorBundle inputFilePath input location message)
+
 type Semantic = StateT Context (Except SemanticError)
 
 evalSemantic :: Semantic a -> Context -> Either SemanticError a
@@ -175,6 +479,9 @@ namespaced p = do
     values .= backup
     pure result
 
+semantic :: String -> Text -> Module 'Unchecked -> Either String (Module 'Checked)
+semantic inputFilePath input = first (renderErrorMessage inputFilePath input . explainError) . checkModule
+
 intrinsicFns :: [(Text, (Vector (Type 'Checked), Type 'Checked))]
 intrinsicFns =
     [ ("cos", (Vector.singleton F64, F64))
@@ -205,262 +512,6 @@ reservedNames =
 
 checkReservedName :: MonadError SemanticError m => Located Text -> m ()
 checkReservedName n = when (unpack n `Set.member` reservedNames) (throwError (ReservedName n))
-
-prettyTypeList :: [Type u] -> String
-prettyTypeList = \case
-    [] -> "<none>"
-    ts -> intercalate ", " ["`" <> prettyType t <> "`" | t <- ts]
-
-prettyArity :: Int -> String
-prettyArity = \case
-    1 -> "1 argument"
-    n -> show n <> " arguments"
-
-semantic :: String -> Text -> Module 'Unchecked -> Either String (Module 'Checked)
-semantic filePath input = first showError . checkModule
-  where
-    parseErrorBundle :: Location -> String -> ParseErrorBundle Text Void
-    parseErrorBundle location message = ParseErrorBundle
-        { bundleErrors = NonEmpty.singleton (FancyError (offset location) (Set.singleton (ErrorFail message)))
-        , bundlePosState = initialPosState
-        }
-      where
-        initialPosState = PosState
-            { pstateInput = input
-            , pstateOffset = 0
-            , pstateSourcePos = initialPos filePath
-            , pstateTabWidth = defaultTabWidth
-            , pstateLinePrefix = mempty
-            }
-
-    showError = \case
-        RedefinedType (Located location d) -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "A type named `" <> Text.unpack (typeDefName d) <> "` was already defined earlier in this file."
-        RedefinedConst (Located location d) -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "A constant named `" <> Text.unpack (constDefName d) <> "` was already defined earlier in this file."
-        RedefinedFn (Located location d) -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "A function named `" <> Text.unpack (fnDefName d) <> "` was already defined earlier in this file."
-        RedefinedEnumVariant location n v -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "An enum variant named `" <> Text.unpack (n <> "::" <> v) <> "` was already defined earlier in this file."
-        StructOrEnumNotFound (Located location n) -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "Type `" <> Text.unpack n <> "` not found."
-        TypeCycle typeCycle -> "The following types form a cycle: " <> intercalate ", " names
-          where
-            names = ["`" <> Text.unpack (typeDefName d) <> "`" | d <- toList typeCycle]
-        StructNotFound (Located location n) -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "Struct `" <> Text.unpack n <> "` not found."
-        EnumNotFound (Located location n) -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "Enum `" <> Text.unpack n <> "` not found."
-        EnumVariantNotFound location n v -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "Enum variant `" <> Text.unpack (n <> "::" <> v) <> "` not found."
-        ConstNotFound (Located location n) -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "Constant `" <> Text.unpack n <> "` not found."
-        FnNotFound (Located location n) -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "Function `" <> Text.unpack n <> "` not found."
-        ValueNotFound (Located location n) -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "Value `" <> Text.unpack n <> "` not found."
-        ConstDefTypeMismatch location actual expected -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                intercalate
-                    "\n"
-                    [ "The right-hand side of this constant definition is of the wrong type."
-                    , ""
-                    , "Expected type:"
-                    , ""
-                    , "    `" <> prettyType expected <> "`"
-                    , ""
-                    , "Actual type:"
-                    , ""
-                    , "    `" <> prettyType actual <> "`"
-                    , ""
-                    ]
-        NegLitInitTypeMismatch (Located location t') -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "Type `" <> prettyType t' <> "` has no definition of `-`."
-        ArgumentTypesMismatch location actual expected -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                intercalate
-                    "\n"
-                    [ "Incorrect argument types."
-                    , ""
-                    , "Expected types:"
-                    , ""
-                    , "    " <> prettyTypeList (toList expected)
-                    , ""
-                    , "Actual types:"
-                    , ""
-                    , "    " <> prettyTypeList (toList actual)
-                    , ""
-                    ]
-        MainFnDefMissing -> "Main function not found."
-        MainFnDefArityMismatch location arity -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                "This function has "
-                <> prettyArity arity
-                <> ", but the main function is required to have "
-                <> prettyArity 0
-                <> "."
-        MainFnDefReturnTypeMismatch location returnType -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                "The declared return type of this function is `"
-                <> prettyType returnType
-                <> "`, but the return type of the main function is required to be `"
-                <> prettyType Unit
-                <> "`."
-        FnDefTypeMismatch location resultType returnType -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                "This function returns a value of type `"
-                <> prettyType resultType
-                <> "`, but its declared return type is `"
-                <> prettyType returnType
-                <> "`."
-        IfScrutineeTypeMismatch location actual -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                intercalate
-                    "\n"
-                    [ "This `if` scrutinee is of the wrong type."
-                    , ""
-                    , "Expected type:"
-                    , ""
-                    , "    `" <> prettyType Bool <> "`"
-                    , ""
-                    , "Actual type:"
-                    , ""
-                    , "    `" <> prettyType actual <> "`"
-                    , ""
-                    ]
-        IfBlocksTypeMismatch location actual expected -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                intercalate
-                    "\n"
-                    [ "This block returns a value of a different type than the first block of the enclosing `if`."
-                    , ""
-                    , "Expected type:"
-                    , ""
-                    , "    `" <> prettyType expected <> "`"
-                    , ""
-                    , "Actual type:"
-                    , ""
-                    , "    `" <> prettyType actual <> "`"
-                    , ""
-                    ]
-        MatchScrutineeTypeMismatch location t0 -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "This `match` scrutinee is of type `" <> prettyType t0 <> "`, which is not an enum."
-        MatchArmEnumMismatch location actual expected -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                "This `match` arm refers to an enum named `"
-                <> Text.unpack actual
-                <> "`, which is different from the expected `"
-                <> Text.unpack expected
-                <> "`."
-        MatchArmEnumVariantNotFound location n v -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "Enum variant `" <> Text.unpack (n <> "::" <> v) <> "` not found."
-        MatchArmResultTypeMismatch location t1 t0 -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                intercalate
-                    "\n"
-                    [ "This block returns a value of a different type than the first block of the enclosing `match`."
-                    , ""
-                    , "Expected type:"
-                    , ""
-                    , "    `" <> prettyType t0 <> "`"
-                    , ""
-                    , "Actual type:"
-                    , ""
-                    , "    `" <> prettyType t1 <> "`"
-                    , ""
-                    ]
-        MatchArmEnumVariantsDuplicated location n vs -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                intercalate
-                    "\n"
-                    [ "The following enum variants are matched by more than one arm:"
-                    , ""
-                    , "    " <> intercalate ", " [Text.unpack ("`" <> n <> "::" <> v <> "`") | v <- toList vs]
-                    , ""
-                    ]
-        MatchArmEnumVariantsMissing location n vs -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                intercalate
-                    "\n"
-                    [ "The following enum variants are matched by zero arms:"
-                    , ""
-                    , "    " <> intercalate ", " [Text.unpack ("`" <> n <> "::" <> v <> "`") | v <- toList vs]
-                    , ""
-                    ]
-        StructPatternArityMismatch location actual expected -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                "This pattern has "
-                <> prettyArity actual
-                <> ", but it was expected to have "
-                <> prettyArity expected
-                <> "."
-        StructPatternTypeMismatch location actual expected -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                "The right-hand side of this pattern is of type `"
-                <> prettyType actual
-                <> "`, but it was expected to be of type `"
-                <> prettyType expected
-                <> "`."
-        UnaryOpTypeMismatch location o t -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                "The operator `"
-                <> prettyUnaryOp o
-                <> "` is not defined for the type `"
-                <> prettyType t
-                <> "`."
-        BinaryOpTypeMismatch location o t0 t1 -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message =
-                "The operator `"
-                <> prettyBinaryOp o
-                <> "` is not defined for the types `"
-                <> prettyType t0
-                <> "`, `"
-                <> prettyType t1
-                <> "`."
-        PrintExprExcessHole location -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "No argument was given for this hole."
-        PrintExprExcessArg location -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "No hole was given for this argument"
-        TypeNotPrintable (Located location t) -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "The type `" <> prettyType t <> "` is not printable."
-        IntrinsicFn (Located location n) -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "The name `" <> Text.unpack n <> "` is already taken by an intrinsic function."
-        ReservedName (Located location n) -> errorBundlePretty (parseErrorBundle location message)
-          where
-            message = "The name `" <> Text.unpack n <> "` is reserved by the compiler."
 
 sortAndGroupBy :: Ord key => (a -> key) -> [a] -> [[a]]
 sortAndGroupBy key = groupBy ((==) `on` key) . sortOn key
