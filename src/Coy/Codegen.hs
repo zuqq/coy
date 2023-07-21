@@ -43,6 +43,7 @@ data Context = Context
     , _fns :: Map Text LLVM.AST.Operand
     , _values :: Map Text LLVM.AST.Operand
     }
+    deriving Show
 
 consts :: Lens' Context (Map Text LLVM.AST.Operand)
 consts = lens _consts \s cs -> s {_consts = cs}

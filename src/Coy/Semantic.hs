@@ -121,6 +121,7 @@ data SemanticErrorMessage = SemanticErrorMessage
     { errorLocation :: Maybe Location
     , errorMessage :: String
     }
+    deriving Show
 
 prettyTypeList :: [Type u] -> String
 prettyTypeList = \case
@@ -732,6 +733,7 @@ data CheckedMatchArmContext = CheckedMatchArmContext
     , cmacResultLocation :: Location
     , cmacResultType :: Type 'Checked
     }
+    deriving Show
 
 checkMatchArm :: Text -> Map Text EnumVariantContext -> MatchArm 'Unchecked -> Semantic CheckedMatchArmContext
 checkMatchArm n0 vs0 (UncheckedMatchArm n v xs e) = do
